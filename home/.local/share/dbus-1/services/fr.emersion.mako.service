@@ -1,0 +1,5 @@
+# Anula la autoactivación de mako (2026-10-31): las notificaciones las da Quickshell (hola).
+# Para volver a mako: borra este archivo.
+[D-BUS Service]
+Name=org.freedesktop.Notifications
+Exec=/bin/false

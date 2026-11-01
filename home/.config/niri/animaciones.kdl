@@ -1,0 +1,57 @@
+// Animaciones de niri (2026-11-01, punto 4 del plan 10/10).
+// Estilo: rápido, sin rebote (muelles con damping-ratio=1.0) y sin zoom.
+// Para volver a las de fábrica: comenta `include "animaciones.kdl"` en config.kdl.
+// Para ver todo más lento al ajustar: descomenta `slowdown`.
+animations {
+    // slowdown 3.0
+
+    workspace-switch {
+        spring damping-ratio=1.0 stiffness=900 epsilon=0.0001
+    }
+    horizontal-view-movement {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
+    window-movement {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
+    window-resize {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
+    overview-open-close {
+        spring damping-ratio=1.0 stiffness=900 epsilon=0.0001
+    }
+
+    // Abrir: la ventana sube 24 px desde abajo mientras aparece (sin escalar).
+    window-open {
+        duration-ms 220
+        curve "ease-out-cubic"
+        custom-shader r"
+            vec4 open_color(vec3 coords_geo, vec3 size_geo) {
+                float p = niri_clamped_progress;
+                float desplazamiento = (1.0 - p) * 24.0;
+                vec2 c = vec2(coords_geo.x, coords_geo.y - desplazamiento / size_geo.y);
+                vec3 t = niri_geo_to_tex * vec3(c, 1.0);
+                if (t.x < 0.0 || t.x > 1.0 || t.y < 0.0 || t.y > 1.0)
+                    return vec4(0.0);
+                return texture2D(niri_tex, t.st) * p;
+            }
+        "
+    }
+
+    // Cerrar: la ventana baja 16 px mientras se desvanece.
+    window-close {
+        duration-ms 160
+        curve "ease-out-quad"
+        custom-shader r"
+            vec4 close_color(vec3 coords_geo, vec3 size_geo) {
+                float p = niri_clamped_progress;
+                float desplazamiento = p * 16.0;
+                vec2 c = vec2(coords_geo.x, coords_geo.y - desplazamiento / size_geo.y);
+                vec3 t = niri_geo_to_tex * vec3(c, 1.0);
+                if (t.x < 0.0 || t.x > 1.0 || t.y < 0.0 || t.y > 1.0)
+                    return vec4(0.0);
+                return texture2D(niri_tex, t.st) * (1.0 - p);
+            }
+        "
+    }
+}

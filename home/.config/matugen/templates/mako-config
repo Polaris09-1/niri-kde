@@ -1,0 +1,13 @@
+font=JetBrainsMono Nerd Font 11
+background-color={{colors.surface.default.hex}}f2
+text-color={{colors.on_surface.default.hex}}
+border-color={{colors.primary.default.hex}}
+border-size=2
+border-radius=12
+padding=12
+margin=12
+default-timeout=6000
+
+# Oculta el aviso en inglés de niri; el panel de Capturas manda uno propio con miniatura
+[app-name=niri summary="Screenshot captured"]
+invisible=1

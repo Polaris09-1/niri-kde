@@ -1,0 +1,6 @@
+# Nunca subir: respaldos, registros, cachés ni archivos temporales
+*.log
+*.bak
+*.tmp
+*~
+.cache/

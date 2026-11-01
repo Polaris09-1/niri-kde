@@ -1,0 +1,66 @@
+diff --git a/Components/Input.qml b/Components/Input.qml
+index 28d8c51..0c9928c 100644
+--- a/Components/Input.qml
++++ b/Components/Input.qml
+@@ -50,11 +50,38 @@ Column {
+ 
+         Label {
+             id: errorMessage
++            property int intentos: 0
++            property int maxIntentos: 5
++            property int bloqueo: 120
++            property int restante: 0
++            Connections {
++                target: sddm
++                function onLoginFailed() {
++                    if (errorMessage.restante > 0) return
++                    errorMessage.intentos++
++                    if (errorMessage.intentos >= errorMessage.maxIntentos) {
++                        errorMessage.restante = errorMessage.bloqueo
++                        cuentaAtras.start()
++                    }
++                }
++            }
++            Timer {
++                id: cuentaAtras
++                interval: 1000
++                repeat: true
++                onTriggered: {
++                    errorMessage.restante--
++                    if (errorMessage.restante <= 0) {
++                        stop()
++                        errorMessage.intentos = 0
++                    }
++                }
++            }
+ 
+             width: parent.width
+             horizontalAlignment: Text.AlignHCenter
+ 
+-            text: failed ? config.TranslateLoginFailedWarning || textConstants.loginFailed + "!" : keyboard.capsLock ? config.TranslateCapslockWarning || textConstants.capslockWarning : null
++            text: errorMessage.restante > 0 ? "Cuenta bloqueada - espera " + Math.floor(errorMessage.restante / 60) + ":" + ("0" + errorMessage.restante % 60).slice(-2) : failed ? "Clave incorrecta - quedan " + (errorMessage.maxIntentos - errorMessage.intentos) + " intentos" : keyboard.capsLock ? config.TranslateCapslockWarning || textConstants.capslockWarning : null
+             font.pointSize: root.font.pointSize * 0.8
+             font.italic: true
+             color: config.WarningColor
+@@ -63,7 +90,7 @@ Column {
+             states: [
+                 State {
+                     name: "fail"
+-                    when: failed
++                    when: failed || errorMessage.restante > 0
+                     PropertyChanges {
+                         target: errorMessage
+                         opacity: 1
+diff --git a/metadata.desktop b/metadata.desktop
+index 9cfd896..2033898 100644
+--- a/metadata.desktop
++++ b/metadata.desktop
+@@ -6,7 +6,7 @@ Website=https://github.com/Keyitdev/sddm-astronaut-theme
+ License=GPL-3.0-or-later
+ Type=sddm-theme
+ Version=1.4
+-ConfigFile=Themes/astronaut.conf
++ConfigFile=Themes/matugen.conf
+ Screenshot=Previews/astronaut.png
+ MainScript=Main.qml
+ TranslationsDirectory=translations

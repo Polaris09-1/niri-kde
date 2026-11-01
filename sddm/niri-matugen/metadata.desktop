@@ -1,0 +1,11 @@
+[SddmGreeterTheme]
+Name=Niri Matugen
+Description=Tema con fondo y colores de matugen
+Author=Joseph
+Version=1.0
+Type=sddm-theme
+MainScript=Main.qml
+ConfigFile=theme.conf
+Theme-Id=niri-matugen
+Theme-API=2.0
+QtVersion=6

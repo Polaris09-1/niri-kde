@@ -1,0 +1,19 @@
+# Paquetes de los repositorios oficiales de Arch (nada del AUR). install.sh los instala con pacman --needed.
+# Escritorio
+niri quickshell matugen alacritty fuzzel swaylock swayidle swaybg
+xdg-desktop-portal-gnome xdg-desktop-portal-gtk
+# Portapapeles, capturas y grabación
+wl-clipboard cliphist wtype grim slurp satty wf-recorder
+# Sistema: red, bluetooth, audio, energía, brillo, multimedia
+networkmanager bluez bluez-utils pipewire pipewire-pulse wireplumber
+power-profiles-daemon brightnessctl playerctl wlsunset udiskie pacman-contrib
+# Qt para Quickshell (vídeo de fondo, shaders, SDDM)
+qt6-multimedia qt6-multimedia-ffmpeg qt6-shadertools qt6-svg qt6-virtualkeyboard
+# Herramientas que usan los scripts
+ffmpeg imagemagick jq curl git glib2 libqalculate
+# Apariencia: apps GTK/Qt con los colores de matugen, iconos y fuente
+adw-gtk-theme qt6ct qt5ct papirus-icon-theme ttf-jetbrains-mono-nerd
+# Extras
+cava fastfetch
+# Pantalla de inicio de sesión
+sddm

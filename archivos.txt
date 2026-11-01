@@ -1,0 +1,19 @@
+# Archivos y carpetas del escritorio, relativos a $HOME (los usan install.sh y sincronizar.sh).
+# Una ruta por línea; las carpetas se copian enteras.
+.config/niri/config.kdl
+.config/niri/animaciones.kdl
+.config/niri/colors.kdl
+.config/quickshell
+.config/matugen
+.config/alacritty/alacritty.toml
+.config/alacritty/colors.toml
+.config/fuzzel/fuzzel.ini
+.config/swaylock/config
+.config/qt5ct/qt5ct.conf
+.config/qt6ct/qt6ct.conf
+.config/environment.d/qt-tema.conf
+.local/bin/wallpaper.sh
+.local/bin/fondo-fotograma.sh
+.local/bin/aplicar-colores-apps.sh
+.local/bin/bloquear.sh
+.local/share/dbus-1/services/fr.emersion.mako.service

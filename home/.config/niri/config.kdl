@@ -698,6 +698,8 @@ spawn-at-startup "quickshell" "-c" "escritorio"
 spawn-at-startup "quickshell" "-c" "osd"
 // Pantalla de bloqueo + bloqueo automático por inactividad (2026-11-01)
 spawn-at-startup "quickshell" "-c" "bloqueo"
+// Agente polkit propio: diálogo para la contraseña de administrador (2026-11-01)
+spawn-at-startup "quickshell" "-c" "permisos"
 // swayidle solo para bloquear ANTES de suspender (tapa / systemctl suspend) y con "loginctl lock-session";
 // los tiempos de inactividad los lleva el módulo "bloqueo"
 spawn-at-startup "swayidle" "-w" "before-sleep" "@HOME@/.local/bin/bloquear.sh" "lock" "@HOME@/.local/bin/bloquear.sh"

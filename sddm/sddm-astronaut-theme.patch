@@ -51,16 +51,744 @@ index 28d8c51..0c9928c 100644
                      PropertyChanges {
                          target: errorMessage
                          opacity: 1
+diff --git a/Tarjeta.qml b/Tarjeta.qml
+new file mode 100644
+index 0000000..78e1cea
+--- /dev/null
++++ b/Tarjeta.qml
+@@ -0,0 +1,719 @@
++// Tarjeta.qml — login de SDDM con el mismo diseño que la pantalla de bloqueo de Quickshell
++// (~/.config/quickshell/bloqueo/Pantalla.qml, 2026-11-01): fondo casi nítido, tarjeta centrada
++// translúcida con el fondo muy difuminado detrás, hora, fecha en español, avatar con la inicial,
++// campos de usuario y contraseña en pastilla, aviso de Bloq Mayús, contador de intentos fallidos
++// (5 intentos → espera 120 s, como faillock), sesión a elegir y botones de energía con cuenta atrás.
++//
++// Colores y fuente: claves Tarjeta* de Themes/matugen.conf (las escribe matugen desde
++// ~/.config/matugen/templates/sddm-astronaut.conf). Fondo: Backgrounds/fondo-actual.jpg
++// (lo genera wallpaper.sh; para vídeo/GIF es su fotograma).
++// Para volver al diseño anterior: MainScript=Main.qml en metadata.desktop.
++
++import QtQuick
++import QtQuick.Effects
++
++Rectangle {
++    id: p
++
++    width: Screen.width
++    height: Screen.height
++    color: tema.surface
++
++    // ===== Ajustes =====
++    readonly property int maxIntentos: 5
++    readonly property int esperaSeg: 120
++
++    // ===== Colores de matugen (config da cadenas) =====
++    QtObject {
++        id: tema
++        property color surface: config.TarjetaSurface || "#101416"
++        property color surfaceText: config.TarjetaSurfaceText || "#e0e3e5"
++        property color primary: config.TarjetaPrimary || "#8acff2"
++        property color primaryText: config.TarjetaPrimaryText || "#003547"
++        property color error: config.TarjetaError || "#ffb4ab"
++    }
++    readonly property string fuente: config.TarjetaFuente || "JetBrainsMono Nerd Font"
++    function alfa(c, a) { return Qt.rgba(c.r, c.g, c.b, a) }
++    function ic(cp) { return String.fromCodePoint(cp) }
++
++    // ===== Hora =====
++    property date ahora: new Date()
++    Timer { interval: 1000; running: true; repeat: true; onTriggered: p.ahora = new Date() }
++
++    // ===== Usuarios (nombre real si lo hay) =====
++    property var nombresReales: ({})
++    Repeater {
++        model: userModel
++        delegate: Item {
++            Component.onCompleted: {
++                var m = p.nombresReales
++                m[model.name] = model.realName || ""
++                p.nombresReales = m
++            }
++        }
++    }
++    readonly property string usuario: campoUsuario.text.trim()
++    readonly property string nombreVisible: p.nombresReales[p.usuario] || p.usuario
++
++    // ===== Sesión =====
++    property int sesion: sessionModel.lastIndex >= 0 ? sessionModel.lastIndex : 0
++    property var nombresSesion: []
++    Repeater {
++        model: sessionModel
++        delegate: Item {
++            Component.onCompleted: {
++                var l = p.nombresSesion.slice()
++                l[index] = model.name
++                p.nombresSesion = l
++            }
++        }
++    }
++    property bool listaSesiones: false
++
++    // ===== Intentos fallidos =====
++    property bool verificando: false
++    property int intentos: 0
++    property int restante: 0              // segundos de espera tras demasiados intentos
++    property string error: ""
++    readonly property bool bloqueadoPorIntentos: p.restante > 0
++    function textoEspera() {
++        return "Demasiados intentos: espera " + Math.floor(p.restante / 60) + ":" + ("0" + p.restante % 60).slice(-2)
++    }
++    Timer {
++        id: cuentaIntentos
++        interval: 1000
++        repeat: true
++        onTriggered: {
++            p.restante--
++            if (p.restante > 0) { p.error = p.textoEspera(); return }
++            stop()
++            p.intentos = 0
++            p.error = ""
++            campo.forceActiveFocus()
++        }
++    }
++    function fallo() {
++        p.verificando = false
++        campo.text = ""
++        sacudir.restart()
++        p.intentos++
++        if (p.intentos >= p.maxIntentos) {
++            p.restante = p.esperaSeg
++            p.error = p.textoEspera()
++            cuentaIntentos.start()
++        } else {
++            var q = p.maxIntentos - p.intentos
++            p.error = "Contraseña incorrecta · " + (q === 1 ? "queda 1 intento" : "quedan " + q + " intentos")
++            campo.forceActiveFocus()
++        }
++    }
++    Connections {
++        target: sddm
++        function onLoginFailed() { p.fallo() }
++        function onLoginSucceeded() { p.verificando = false; p.error = "" }
++    }
++
++    function enviar() {
++        if (p.verificando || p.bloqueadoPorIntentos) return
++        if (p.usuario === "") { p.error = "Escribe tu usuario"; campoUsuario.forceActiveFocus(); return }
++        if (campo.text === "") { campo.forceActiveFocus(); return }
++        var t = campo.text
++        campo.text = ""                   // el campo se vacía en cada intento
++        p.error = ""
++        p.verificando = true
++        sddm.login(p.usuario, t, p.sesion)
++    }
++
++    // ===== Energía (reiniciar/apagar con confirmación y cuenta atrás de 5 s) =====
++    property string pendiente: ""
++    property int cuenta: 5
++    function hacerEnergia(id) {
++        if (id === "suspender") sddm.suspend()
++        else if (id === "reiniciar") sddm.reboot()
++        else if (id === "apagar") sddm.powerOff()
++    }
++    function pedirEnergia(id) {
++        if (id === "suspender") { hacerEnergia(id); return }
++        p.pendiente = id
++        p.cuenta = 5
++        cuentaAtras.restart()
++    }
++    Timer {
++        id: cuentaAtras
++        interval: 1000
++        repeat: true
++        onTriggered: {
++            p.cuenta--
++            if (p.cuenta <= 0) { stop(); var id = p.pendiente; p.pendiente = ""; p.hacerEnergia(id) }
++        }
++    }
++
++    // ===== Fondo casi nítido (igual que el bloqueo) =====
++    Image {
++        id: imagenFondo
++        anchors.fill: parent
++        source: config.Background ? Qt.resolvedUrl(config.Background) : ""
++        fillMode: Image.PreserveAspectCrop
++        cache: false
++        visible: false
++    }
++    MultiEffect {
++        id: fondo
++        anchors.fill: parent
++        source: imagenFondo
++        autoPaddingEnabled: false
++        blurEnabled: true
++        blur: 0.25
++        blurMax: 32
++    }
++    Rectangle {
++        anchors.fill: parent
++        color: p.alfa(tema.surface, 0.22)
++    }
++    MouseArea {
++        anchors.fill: parent
++        onClicked: { p.listaSesiones = false; campo.forceActiveFocus() }
++    }
++
++    // ===== Nombre del equipo (arriba a la derecha, sobre una pastilla como en el bloqueo) =====
++    Rectangle {
++        anchors.fill: estadoArriba
++        anchors.margins: -8
++        anchors.leftMargin: -12
++        anchors.rightMargin: -12
++        radius: height / 2
++        visible: sddm.hostName !== ""
++        color: p.alfa(tema.surface, 0.6)
++        border.color: p.alfa(tema.primary, 0.25)
++        border.width: 1
++    }
++    Row {
++        id: estadoArriba
++        visible: sddm.hostName !== ""
++        anchors.top: parent.top
++        anchors.right: parent.right
++        anchors.topMargin: 22
++        anchors.rightMargin: 30
++        spacing: 8
++        Text {
++            text: p.ic(0xF0322)           // portátil
++            font.family: p.fuente
++            font.pixelSize: 15
++            color: p.alfa(tema.surfaceText, 0.85)
++        }
++        Text {
++            anchors.verticalCenter: parent.verticalCenter
++            text: sddm.hostName
++            font.family: p.fuente
++            font.pixelSize: 12
++            color: p.alfa(tema.surfaceText, 0.85)
++        }
++    }
++
++    // ===== Tarjeta =====
++    Item {
++        id: fondoTarjeta
++        anchors.fill: tarjeta
++        layer.enabled: true
++        layer.effect: MultiEffect {
++            maskEnabled: true
++            maskSource: mascaraTarjeta
++            maskThresholdMin: 0.5
++            maskSpreadAtMin: 1.0
++        }
++        MultiEffect {
++            anchors.fill: parent
++            source: ShaderEffectSource {
++                sourceItem: fondo
++                sourceRect: Qt.rect(tarjeta.x, tarjeta.y, tarjeta.width, tarjeta.height)
++            }
++            autoPaddingEnabled: false
++            blurEnabled: true
++            blur: 1.0
++            blurMax: 64
++        }
++        Rectangle {
++            anchors.fill: parent
++            color: p.alfa(tema.surface, 0.62)
++        }
++    }
++    Rectangle {
++        id: mascaraTarjeta
++        anchors.fill: tarjeta
++        radius: 28
++        visible: false
++        layer.enabled: true
++    }
++    Rectangle {
++        anchors.fill: tarjeta
++        radius: 28
++        color: "transparent"
++        border.color: p.alfa(tema.primary, 0.35)
++        border.width: 1
++    }
++
++    Item {
++        id: tarjeta
++        width: 380
++        height: columna.implicitHeight + 56
++        anchors.centerIn: parent
++
++        Column {
++            id: columna
++            x: 28
++            y: 28
++            width: parent.width - 56
++            spacing: 18
++
++            // Hora y fecha
++            Column {
++                width: parent.width
++                spacing: 2
++                Text {
++                    width: parent.width
++                    horizontalAlignment: Text.AlignHCenter
++                    text: Qt.formatTime(p.ahora, "HH:mm")
++                    font.family: p.fuente
++                    font.pixelSize: 72
++                    font.weight: Font.Light
++                    color: tema.surfaceText
++                }
++                Text {
++                    width: parent.width
++                    horizontalAlignment: Text.AlignHCenter
++                    text: {
++                        var t = Qt.locale("es_ES").toString(p.ahora, "dddd, d 'de' MMMM")
++                        return t.charAt(0).toUpperCase() + t.slice(1)
++                    }
++                    font.family: p.fuente
++                    font.pixelSize: 14
++                    color: p.alfa(tema.surfaceText, 0.7)
++                }
++            }
++
++            // Usuario (avatar con la inicial, igual que el bloqueo)
++            Row {
++                anchors.horizontalCenter: parent.horizontalCenter
++                spacing: 12
++                Rectangle {
++                    width: 40
++                    height: 40
++                    radius: 20
++                    color: tema.primary
++                    Text {
++                        anchors.centerIn: parent
++                        text: p.usuario !== "" ? p.nombreVisible.charAt(0).toUpperCase() : p.ic(0xF0004)
++                        font.family: p.fuente
++                        font.pixelSize: 18
++                        font.bold: true
++                        color: tema.primaryText
++                    }
++                }
++                Text {
++                    anchors.verticalCenter: parent.verticalCenter
++                    text: p.usuario !== "" ? p.nombreVisible : "¿Quién eres?"
++                    font.family: p.fuente
++                    font.pixelSize: 15
++                    color: tema.surfaceText
++                }
++            }
++
++            // Campos
++            Column {
++                width: parent.width
++                spacing: 10
++
++                // Campo de usuario (texto visible)
++                Rectangle {
++                    width: parent.width
++                    height: 48
++                    radius: height / 2
++                    color: p.alfa(tema.surface, 0.55)
++                    border.width: 1.5
++                    border.color: campoUsuario.activeFocus ? p.alfa(tema.primary, 0.7) : p.alfa(tema.primary, 0.3)
++                    Behavior on border.color { ColorAnimation { duration: 120 } }
++
++                    Text {
++                        id: iconoUsuario
++                        anchors.left: parent.left
++                        anchors.leftMargin: 18
++                        anchors.verticalCenter: parent.verticalCenter
++                        text: p.ic(0xF0004)
++                        font.family: p.fuente
++                        font.pixelSize: 16
++                        color: tema.primary
++                    }
++                    TextInput {
++                        id: campoUsuario
++                        anchors.left: iconoUsuario.right
++                        anchors.leftMargin: 12
++                        anchors.right: parent.right
++                        anchors.rightMargin: 20
++                        anchors.verticalCenter: parent.verticalCenter
++                        text: userModel.lastUser || ""
++                        font.family: p.fuente
++                        font.pixelSize: 14
++                        color: tema.surfaceText
++                        selectionColor: p.alfa(tema.primary, 0.4)
++                        selectedTextColor: tema.surfaceText
++                        clip: true
++                        enabled: !p.verificando
++                        KeyNavigation.tab: campo
++                        onAccepted: campo.forceActiveFocus()
++                    }
++                    Text {
++                        anchors.left: campoUsuario.left
++                        anchors.verticalCenter: parent.verticalCenter
++                        visible: campoUsuario.text.length === 0
++                        text: "Usuario"
++                        font.family: p.fuente
++                        font.pixelSize: 13
++                        color: p.alfa(tema.surfaceText, 0.5)
++                    }
++                    MouseArea {
++                        anchors.fill: parent
++                        cursorShape: Qt.IBeamCursor
++                        onClicked: campoUsuario.forceActiveFocus()
++                    }
++                }
++
++                // Contraseña (puntos, igual que el bloqueo)
++                Item {
++                    width: parent.width
++                    height: 48
++                    Rectangle {
++                        id: pildora
++                        width: parent.width
++                        height: parent.height
++                        radius: height / 2
++                        color: p.alfa(tema.surface, 0.55)
++                        border.width: 1.5
++                        border.color: p.error !== "" ? tema.error
++                                    : campo.activeFocus ? p.alfa(tema.primary, 0.7) : p.alfa(tema.primary, 0.3)
++                        Behavior on border.color { ColorAnimation { duration: 120 } }
++
++                        SequentialAnimation on x {
++                            id: sacudir
++                            running: false
++                            NumberAnimation { to: -10; duration: 50; easing.type: Easing.OutCubic }
++                            NumberAnimation { to: 8; duration: 70 }
++                            NumberAnimation { to: -5; duration: 60 }
++                            NumberAnimation { to: 0; duration: 60; easing.type: Easing.OutCubic }
++                        }
++
++                        Text {
++                            id: iconoClave
++                            anchors.left: parent.left
++                            anchors.leftMargin: 18
++                            anchors.verticalCenter: parent.verticalCenter
++                            text: p.ic(0xF033E)
++                            font.family: p.fuente
++                            font.pixelSize: 16
++                            color: tema.primary
++                        }
++
++                        // Entrada real (invisible): la contraseña solo vive aquí hasta pulsar Enter
++                        TextInput {
++                            id: campo
++                            anchors.fill: parent
++                            opacity: 0
++                            echoMode: TextInput.Password
++                            focus: true
++                            enabled: !p.verificando && !p.bloqueadoPorIntentos
++                            KeyNavigation.backtab: campoUsuario
++                            onAccepted: p.enviar()
++                            Keys.onEscapePressed: text = ""
++                        }
++
++                        // Puntos (uno por carácter, máx. 16 a la vista)
++                        Row {
++                            anchors.left: iconoClave.right
++                            anchors.leftMargin: 14
++                            anchors.verticalCenter: parent.verticalCenter
++                            spacing: 7
++                            visible: campo.text.length > 0
++                            Repeater {
++                                model: Math.min(campo.text.length, 16)
++                                delegate: Rectangle {
++                                    width: 8
++                                    height: 8
++                                    radius: 4
++                                    color: tema.primary
++                                }
++                            }
++                        }
++                        Text {
++                            anchors.left: iconoClave.right
++                            anchors.leftMargin: 12
++                            anchors.verticalCenter: parent.verticalCenter
++                            visible: campo.text.length === 0
++                            text: p.verificando ? "Comprobando…" : p.bloqueadoPorIntentos ? "Espera…" : "Contraseña"
++                            font.family: p.fuente
++                            font.pixelSize: 13
++                            color: p.alfa(tema.surfaceText, 0.5)
++                        }
++                        Rectangle {
++                            anchors.right: parent.right
++                            anchors.rightMargin: 6
++                            anchors.verticalCenter: parent.verticalCenter
++                            width: 36
++                            height: 36
++                            radius: 18
++                            color: campo.text.length > 0 ? tema.primary : p.alfa(tema.primary, 0.15)
++                            Text {
++                                anchors.centerIn: parent
++                                text: p.ic(p.verificando ? 0xF0772 : 0xF0054)
++                                font.family: p.fuente
++                                font.pixelSize: 16
++                                color: campo.text.length > 0 ? tema.primaryText : tema.primary
++                                RotationAnimation on rotation {
++                                    running: p.verificando
++                                    from: 0; to: 360; duration: 900; loops: Animation.Infinite
++                                }
++                            }
++                            MouseArea {
++                                anchors.fill: parent
++                                cursorShape: Qt.PointingHandCursor
++                                onClicked: { p.enviar(); campo.forceActiveFocus() }
++                            }
++                        }
++                    }
++                    MouseArea {
++                        anchors.fill: parent
++                        anchors.rightMargin: 48
++                        cursorShape: Qt.IBeamCursor
++                        onClicked: campo.forceActiveFocus()
++                    }
++                }
++            }
++
++            // Mensajes: intentos fallidos y Bloq Mayús
++            Column {
++                width: parent.width
++                spacing: 4
++                visible: p.error !== "" || keyboard.capsLock
++                Text {
++                    visible: p.error !== ""
++                    width: parent.width
++                    horizontalAlignment: Text.AlignHCenter
++                    wrapMode: Text.WordWrap
++                    text: p.error
++                    font.family: p.fuente
++                    font.pixelSize: 12
++                    color: tema.error
++                }
++                Text {
++                    visible: keyboard.capsLock
++                    width: parent.width
++                    horizontalAlignment: Text.AlignHCenter
++                    text: p.ic(0xF0632) + "  Bloq Mayús activado"
++                    font.family: p.fuente
++                    font.pixelSize: 12
++                    color: p.alfa(tema.surfaceText, 0.75)
++                }
++            }
++
++            // Energía: botones o confirmación con cuenta atrás (oculta si SDDM no permite ninguna)
++            Item {
++                width: parent.width
++                height: 40
++                visible: botonesEnergia.count > 0
++                Row {
++                    visible: p.pendiente === ""
++                    anchors.centerIn: parent
++                    spacing: 18
++                    Repeater {
++                        id: botonesEnergia
++                        model: [
++                            { id: "suspender", icono: 0xF0904, puede: sddm.canSuspend },
++                            { id: "reiniciar", icono: 0xF0709, puede: sddm.canReboot },
++                            { id: "apagar", icono: 0xF0425, puede: sddm.canPowerOff }
++                        ].filter(function (b) { return b.puede || config.BypassSystemButtonsChecks === "true" })
++                        delegate: Rectangle {
++                            required property var modelData
++                            width: 40
++                            height: 40
++                            radius: 20
++                            color: zonaEnergia.containsMouse ? p.alfa(tema.primary, 0.2) : p.alfa(tema.surface, 0.45)
++                            border.color: p.alfa(tema.primary, 0.25)
++                            border.width: 1
++                            Text {
++                                anchors.centerIn: parent
++                                text: p.ic(modelData.icono)
++                                font.family: p.fuente
++                                font.pixelSize: 17
++                                color: p.alfa(tema.surfaceText, 0.85)
++                            }
++                            MouseArea {
++                                id: zonaEnergia
++                                anchors.fill: parent
++                                hoverEnabled: true
++                                cursorShape: Qt.PointingHandCursor
++                                onClicked: p.pedirEnergia(modelData.id)
++                            }
++                        }
++                    }
++                }
++                Row {
++                    visible: p.pendiente !== ""
++                    anchors.centerIn: parent
++                    spacing: 10
++                    Text {
++                        anchors.verticalCenter: parent.verticalCenter
++                        text: (p.pendiente === "apagar" ? "Se apagará en " : "Se reiniciará en ") + p.cuenta + " s"
++                        font.family: p.fuente
++                        font.pixelSize: 12
++                        color: tema.surfaceText
++                    }
++                    Repeater {
++                        model: [ { id: "cancelar", texto: "Cancelar" }, { id: "ahora", texto: "Ahora" } ]
++                        delegate: Rectangle {
++                            required property var modelData
++                            width: textoBoton.implicitWidth + 24
++                            height: 30
++                            radius: 15
++                            color: modelData.id === "ahora" ? p.alfa(tema.error, 0.85)
++                                 : zonaConfirmar.containsMouse ? p.alfa(tema.primary, 0.2) : p.alfa(tema.surface, 0.5)
++                            Text {
++                                id: textoBoton
++                                anchors.centerIn: parent
++                                text: modelData.texto
++                                font.family: p.fuente
++                                font.pixelSize: 12
++                                color: modelData.id === "ahora" ? "#3b0a0a" : tema.surfaceText
++                            }
++                            MouseArea {
++                                id: zonaConfirmar
++                                anchors.fill: parent
++                                hoverEnabled: true
++                                cursorShape: Qt.PointingHandCursor
++                                onClicked: {
++                                    cuentaAtras.stop()
++                                    var id = p.pendiente
++                                    p.pendiente = ""
++                                    if (modelData.id === "ahora") p.hacerEnergia(id)
++                                }
++                            }
++                        }
++                    }
++                }
++            }
++
++            // Sesión (chip que despliega la lista hacia arriba)
++            Rectangle {
++                id: chipSesion
++                visible: p.nombresSesion.length > 0
++                anchors.horizontalCenter: parent.horizontalCenter
++                width: filaSesion.implicitWidth + 28
++                height: 30
++                radius: 15
++                color: zonaSesion.containsMouse || p.listaSesiones ? p.alfa(tema.primary, 0.2) : p.alfa(tema.surface, 0.45)
++                border.color: p.alfa(tema.primary, 0.25)
++                border.width: 1
++                Row {
++                    id: filaSesion
++                    anchors.centerIn: parent
++                    spacing: 8
++                    Text {
++                        anchors.verticalCenter: parent.verticalCenter
++                        text: p.ic(0xF0379)
++                        font.family: p.fuente
++                        font.pixelSize: 14
++                        color: tema.primary
++                    }
++                    Text {
++                        anchors.verticalCenter: parent.verticalCenter
++                        text: p.nombresSesion[p.sesion] || "Sesión"
++                        font.family: p.fuente
++                        font.pixelSize: 12
++                        color: p.alfa(tema.surfaceText, 0.85)
++                    }
++                    Text {
++                        anchors.verticalCenter: parent.verticalCenter
++                        visible: p.nombresSesion.length > 1
++                        text: p.ic(p.listaSesiones ? 0xF0143 : 0xF0140)
++                        font.family: p.fuente
++                        font.pixelSize: 14
++                        color: p.alfa(tema.surfaceText, 0.6)
++                    }
++                }
++                MouseArea {
++                    id: zonaSesion
++                    anchors.fill: parent
++                    hoverEnabled: true
++                    cursorShape: Qt.PointingHandCursor
++                    onClicked: if (p.nombresSesion.length > 1) p.listaSesiones = !p.listaSesiones
++                }
++            }
++        }
++    }
++
++    // Lista de sesiones: sale por encima del chip, con el mismo estilo de la tarjeta
++    Rectangle {
++        id: lista
++        visible: opacity > 0
++        opacity: p.listaSesiones ? 1 : 0
++        Behavior on opacity { NumberAnimation { duration: 120 } }
++        width: 240
++        height: columnaSesiones.implicitHeight + 12
++        radius: 18
++        x: tarjeta.x + (tarjeta.width - width) / 2
++        y: tarjeta.y + columna.y + chipSesion.y - height - 8 + (p.listaSesiones ? 0 : 6)
++        Behavior on y { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
++        color: Qt.tint(tema.surface, p.alfa(tema.primary, 0.06))
++        border.color: p.alfa(tema.primary, 0.35)
++        border.width: 1
++        Column {
++            id: columnaSesiones
++            x: 6
++            y: 6
++            width: parent.width - 12
++            Repeater {
++                model: p.nombresSesion
++                delegate: Rectangle {
++                    required property var modelData
++                    required property int index
++                    width: parent.width
++                    height: 34
++                    radius: 12
++                    color: index === p.sesion ? p.alfa(tema.primary, 0.22)
++                         : zonaItem.containsMouse ? p.alfa(tema.primary, 0.12) : "transparent"
++                    Text {
++                        anchors.left: parent.left
++                        anchors.leftMargin: 14
++                        anchors.right: marca.left
++                        anchors.verticalCenter: parent.verticalCenter
++                        elide: Text.ElideRight
++                        text: modelData
++                        font.family: p.fuente
++                        font.pixelSize: 12
++                        color: tema.surfaceText
++                    }
++                    Text {
++                        id: marca
++                        anchors.right: parent.right
++                        anchors.rightMargin: 12
++                        anchors.verticalCenter: parent.verticalCenter
++                        visible: index === p.sesion
++                        text: p.ic(0xF012C)
++                        font.family: p.fuente
++                        font.pixelSize: 14
++                        color: tema.primary
++                    }
++                    MouseArea {
++                        id: zonaItem
++                        anchors.fill: parent
++                        hoverEnabled: true
++                        cursorShape: Qt.PointingHandCursor
++                        onClicked: { p.sesion = index; p.listaSesiones = false; campo.forceActiveFocus() }
++                    }
++                }
++            }
++        }
++    }
++
++    Component.onCompleted: {
++        if (campoUsuario.text === "") campoUsuario.forceActiveFocus()
++        else campo.forceActiveFocus()
++    }
++}
 diff --git a/metadata.desktop b/metadata.desktop
-index 9cfd896..2033898 100644
+index 9cfd896..fadb57d 100644
 --- a/metadata.desktop
 +++ b/metadata.desktop
-@@ -6,7 +6,7 @@ Website=https://github.com/Keyitdev/sddm-astronaut-theme
+@@ -6,9 +6,9 @@ Website=https://github.com/Keyitdev/sddm-astronaut-theme
  License=GPL-3.0-or-later
  Type=sddm-theme
  Version=1.4
 -ConfigFile=Themes/astronaut.conf
 +ConfigFile=Themes/matugen.conf
  Screenshot=Previews/astronaut.png
- MainScript=Main.qml
+-MainScript=Main.qml
++MainScript=Tarjeta.qml
  TranslationsDirectory=translations
+ Theme-Id=sddm-astronaut-theme
+ Theme-API=2.0

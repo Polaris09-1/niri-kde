@@ -51,4 +51,6 @@ matugen image "$FIJA" --source-color-index 0 -t scheme-fidelity
 pkill -SIGUSR2 waybar || true
 
 # 3) Fondo de la pantalla de inicio de sesión (SDDM)
-magick "$FIJA" -resize 480x270^ -gravity center -extent 480x270 -blur 0x8 -resize 1920x1080 /usr/share/sddm/themes/sddm-astronaut-theme/Backgrounds/fondo-actual.jpg
+# Nítido y a tamaño de pantalla: el difuminado lo hace Tarjeta.qml igual que la pantalla de bloqueo
+# (poco en el fondo, mucho detrás de la tarjeta). Antes: -resize 480x270 -blur 0x8 (muy borroso).
+magick "$FIJA" -resize 1920x1080^ -gravity center -extent 1920x1080 -quality 92 /usr/share/sddm/themes/sddm-astronaut-theme/Backgrounds/fondo-actual.jpg

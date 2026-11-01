@@ -37,6 +37,7 @@ arranca niri:
 | `fondo` | Fondo de pantalla con transiciones por shader (círculo desde el clic, ola, barrido, fundido) y vídeo, que se pausa con ventanas maximizadas. |
 | `osd` | Aviso discreto de volumen, micrófono, brillo y Bloq Mayús. |
 | `bloqueo` | Pantalla de bloqueo (PAM) con música, avisos sin ver, batería y botones de energía; bloqueo automático por inactividad. |
+| `permisos` | Agente polkit: diálogo propio (en español) cuando una app pide la contraseña de administrador. |
 | `reloj` | Reloj decorativo del escritorio. |
 
 Además:
@@ -44,7 +45,7 @@ Además:
 - **niri**: animaciones propias sin rebote (abrir/cerrar con shader), sombras y borde con los colores del fondo.
 - **matugen**: plantillas para Quickshell, niri, alacritty, fuzzel, swaylock, GTK 3/4 (adw-gtk3), Qt (qt5ct/qt6ct), KDE (`kdeglobals`) y SDDM.
 - **Scripts** en `~/.local/bin`: `wallpaper.sh` (pone el fondo y regenera los colores), `fondo-fotograma.sh`, `aplicar-colores-apps.sh` y `bloquear.sh`.
-- **SDDM**: tema [sddm-astronaut](https://github.com/Keyitdev/sddm-astronaut-theme) con colores de matugen, el fondo actual y aviso de intentos fallidos (se guarda solo el parche, no el tema entero).
+- **SDDM**: tema [sddm-astronaut](https://github.com/Keyitdev/sddm-astronaut-theme) con un diseño propio (`Tarjeta.qml`) igual a la pantalla de bloqueo de Quickshell: tarjeta centrada translúcida, fondo actual (fotograma si es vídeo) difuminado, colores de matugen, fecha en español, campos de usuario y contraseña en pastilla, contador de intentos fallidos (5 → espera 2 min), selección de sesión y energía con cuenta atrás. Se guarda solo el parche, no el tema entero; para volver al diseño original: `MainScript=Main.qml` en `metadata.desktop`.
 
 ## Instalación
 

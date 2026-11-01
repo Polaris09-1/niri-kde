@@ -69,6 +69,42 @@ ShellRoot {
         onLoaded: root.rutaFondo = text().trim()
     }
 
+    // Fondo animado (2026-11-01): si el fondo elegido es vídeo o GIF, Pantalla.qml lo reproduce
+    // encima de la imagen fija. Vídeo = la copia optimizada para la pantalla (la misma caché que usa
+    // el módulo "fondo"; si aún no existe, el original mientras se crea).
+    property string rutaAnimada: ""     // "" = no hay (o es una imagen fija)
+    property string elegido: ""         // ~/.cache/wallpaper-actual
+    readonly property bool pantallaApagada: inactivoPantalla.isIdle
+    FileView {
+        path: Quickshell.env("HOME") + "/.cache/wallpaper-actual"
+        watchChanges: true
+        onFileChanged: reload()
+        onLoaded: {
+            var r = text().trim()
+            if (r === root.elegido) return
+            root.elegido = r
+            var l = r.toLowerCase()
+            if (/\.gif$/.test(l)) { root.rutaAnimada = r; return }
+            if (!/\.(mp4|webm|mkv|mov)$/.test(l)) { root.rutaAnimada = ""; return }
+            root.rutaAnimada = ""
+            var pantalla = Quickshell.screens.length > 0 ? Quickshell.screens[0] : null
+            var w = pantalla ? Math.round(pantalla.width * pantalla.devicePixelRatio / 2) * 2 : 1920
+            var h = pantalla ? Math.round(pantalla.height * pantalla.devicePixelRatio / 2) * 2 : 1080
+            optimizador.running = false
+            optimizador.command = [Quickshell.env("HOME") + "/.local/bin/fondo-optimizar.sh", r, String(w), String(h), "30"]
+            optimizador.running = true
+        }
+    }
+    Process {
+        id: optimizador
+        stdout: SplitParser {
+            onRead: linea => {
+                if (linea.startsWith("LISTO ")) root.rutaAnimada = linea.substring(6)
+                else if (linea === "ORIGINAL" || linea.startsWith("FALLO")) root.rutaAnimada = root.elegido
+            }
+        }
+    }
+
     // ===== Estado =====
     property bool bloqueado: false
     // Avisa al fondo animado para que pause el vídeo mientras está bloqueado (y con la pantalla apagada)
@@ -397,7 +433,8 @@ ShellRoot {
                 bloqueado: root.bloqueado, seguro: candado.secure, verificando: root.verificando,
                 error: root.error, avisosNuevos: root.avisosNuevos, mayus: root.mayus,
                 bateria: root.bateria, enBateria: UPower.onBattery, wifi: root.wifiSenal,
-                fondo: root.rutaFondo, vista: root.vista, atenuar: root.atenuar,
+                fondo: root.rutaFondo, fondoAnimado: root.rutaAnimada, pantallaApagada: root.pantallaApagada,
+                vista: root.vista, atenuar: root.atenuar,
                 inactivo: { atenuar: inactivoAtenuar.isIdle, bloquear: inactivoBloquear.isIdle,
                             suspender: inactivoSuspender.isIdle },
                 pruebaPam: root.resultadoPrueba

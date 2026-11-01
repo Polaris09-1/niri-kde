@@ -2,6 +2,7 @@ import Quickshell
 import Quickshell.Services.Mpris
 import QtQuick
 import QtQuick.Effects
+import QtMultimedia
 
 // Pantalla de bloqueo, diseño "tarjeta lateral" (elegido el 2026-11-01): fondo casi nítido y una
 // tarjeta translúcida (centrada) con hora, fecha, música, avisos sin ver, usuario, contraseña y
@@ -51,14 +52,56 @@ Item {
     // ===== Fondo casi nítido =====
     // La imagen no se dibuja sola: la dibuja el efecto de abajo, del mismo tamaño que la pantalla
     // (sin relleno automático, que la desplazaba y ampliaba). Sin zoom: solo recorte para llenar.
-    Image {
+    // Imagen fija siempre debajo; si el fondo es vídeo/GIF, se reproduce encima (en bucle, sin
+    // sonido) cuando ya tiene fotograma. Se pausa con la pantalla apagada.
+    readonly property string animada: p.s.rutaAnimada
+    readonly property bool esGif: /\.gif$/i.test(animada)
+    readonly property bool reproducir: p.s.bloqueado || p.vistaPrevia
+    readonly property bool pausarAnimacion: p.s.pantallaApagada
+    Item {
         id: imagenFondo
         anchors.fill: parent
-        source: p.s.rutaFondo ? "file://" + p.s.rutaFondo : ""
-        fillMode: Image.PreserveAspectCrop
-        asynchronous: false
-        cache: false
-        visible: false
+        // Sin visible:false ni layer: así el vídeo se repinta en cada fotograma. Lo oculta
+        // el efecto de abajo (MultiEffect lo envuelve con hideSource).
+        Image {
+            anchors.fill: parent
+            source: p.s.rutaFondo ? "file://" + p.s.rutaFondo : ""
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: false
+            cache: false
+        }
+        MediaPlayer {
+            id: videoFondo
+            source: p.reproducir && p.animada !== "" && !p.esGif ? "file://" + p.animada : ""
+            loops: MediaPlayer.Infinite
+            videoOutput: salidaVideo
+            // Sin audioOutput: no suena
+            onSourceChanged: if (source != "") play()
+            Component.onCompleted: if (source != "") play()
+        }
+        Connections {
+            target: p
+            function onPausarAnimacionChanged() {
+                if (videoFondo.source == "") return
+                if (p.pausarAnimacion) videoFondo.pause(); else videoFondo.play()
+            }
+        }
+        VideoOutput {
+            id: salidaVideo
+            anchors.fill: parent
+            fillMode: VideoOutput.PreserveAspectCrop
+            visible: videoFondo.source != "" && videoFondo.hasVideo && videoFondo.error === MediaPlayer.NoError
+                     && videoFondo.playbackState !== MediaPlayer.StoppedState
+        }
+        AnimatedImage {
+            anchors.fill: parent
+            source: p.reproducir && p.esGif ? "file://" + p.animada : ""
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            cache: false
+            paused: p.pausarAnimacion
+            visible: status === Image.Ready
+        }
     }
     MultiEffect {
         id: fondo

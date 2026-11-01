@@ -16,4 +16,6 @@
 .local/bin/fondo-fotograma.sh
 .local/bin/aplicar-colores-apps.sh
 .local/bin/bloquear.sh
+.local/bin/fondo-arrancar.sh
+.local/bin/fondo-optimizar.sh
 .local/share/dbus-1/services/fr.emersion.mako.service

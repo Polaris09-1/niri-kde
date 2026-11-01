@@ -53,10 +53,10 @@ index 28d8c51..0c9928c 100644
                          opacity: 1
 diff --git a/Tarjeta.qml b/Tarjeta.qml
 new file mode 100644
-index 0000000..78e1cea
+index 0000000..eda58d5
 --- /dev/null
 +++ b/Tarjeta.qml
-@@ -0,0 +1,719 @@
+@@ -0,0 +1,749 @@
 +// Tarjeta.qml — login de SDDM con el mismo diseño que la pantalla de bloqueo de Quickshell
 +// (~/.config/quickshell/bloqueo/Pantalla.qml, 2026-11-01): fondo casi nítido, tarjeta centrada
 +// translúcida con el fondo muy difuminado detrás, hora, fecha en español, avatar con la inicial,
@@ -65,11 +65,13 @@ index 0000000..78e1cea
 +//
 +// Colores y fuente: claves Tarjeta* de Themes/matugen.conf (las escribe matugen desde
 +// ~/.config/matugen/templates/sddm-astronaut.conf). Fondo: Backgrounds/fondo-actual.jpg
-+// (lo genera wallpaper.sh; para vídeo/GIF es su fotograma).
++// (lo genera wallpaper.sh; para vídeo/GIF es su fotograma). Si el fondo es animado, wallpaper.sh
++// deja además Backgrounds/fondo-actual.mp4 (o .gif) y se reproduce encima, en bucle y sin sonido.
 +// Para volver al diseño anterior: MainScript=Main.qml en metadata.desktop.
 +
 +import QtQuick
 +import QtQuick.Effects
++import QtMultimedia
 +
 +Rectangle {
 +    id: p
@@ -208,13 +210,41 @@ index 0000000..78e1cea
 +    }
 +
 +    // ===== Fondo casi nítido (igual que el bloqueo) =====
-+    Image {
++    // Imagen fija siempre debajo; vídeo o GIF encima solo cuando ya tienen fotograma
++    // (si no existen o fallan, se ve la imagen). No se dibuja solo: lo dibuja el efecto de abajo.
++    Item {
 +        id: imagenFondo
 +        anchors.fill: parent
-+        source: config.Background ? Qt.resolvedUrl(config.Background) : ""
-+        fillMode: Image.PreserveAspectCrop
-+        cache: false
-+        visible: false
++        // Sin visible:false ni layer: así el vídeo se repinta en cada fotograma. Lo oculta
++        // el efecto de abajo (MultiEffect lo envuelve con hideSource).
++        Image {
++            anchors.fill: parent
++            source: config.Background ? Qt.resolvedUrl(config.Background) : ""
++            fillMode: Image.PreserveAspectCrop
++            cache: false
++        }
++        MediaPlayer {
++            id: videoFondo
++            source: Qt.resolvedUrl("Backgrounds/fondo-actual.mp4")
++            loops: MediaPlayer.Infinite
++            videoOutput: salidaVideo
++            // Sin audioOutput: no suena
++            Component.onCompleted: play()
++        }
++        VideoOutput {
++            id: salidaVideo
++            anchors.fill: parent
++            fillMode: VideoOutput.PreserveAspectCrop
++            visible: videoFondo.playbackState === MediaPlayer.PlayingState && videoFondo.hasVideo
++                     && videoFondo.error === MediaPlayer.NoError
++        }
++        AnimatedImage {
++            anchors.fill: parent
++            source: Qt.resolvedUrl("Backgrounds/fondo-actual.gif")
++            fillMode: Image.PreserveAspectCrop
++            cache: false
++            visible: status === Image.Ready
++        }
 +    }
 +    MultiEffect {
 +        id: fondo

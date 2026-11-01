@@ -54,3 +54,28 @@ pkill -SIGUSR2 waybar || true
 # Nítido y a tamaño de pantalla: el difuminado lo hace Tarjeta.qml igual que la pantalla de bloqueo
 # (poco en el fondo, mucho detrás de la tarjeta). Antes: -resize 480x270 -blur 0x8 (muy borroso).
 magick "$FIJA" -resize 1920x1080^ -gravity center -extent 1920x1080 -quality 92 /usr/share/sddm/themes/sddm-astronaut-theme/Backgrounds/fondo-actual.jpg
+
+# 4) Fondo ANIMADO para SDDM (2026-11-01): Tarjeta.qml reproduce Backgrounds/fondo-actual.mp4
+#    (o .gif) encima de la imagen fija; si no existe, se queda la imagen. Para vídeo se copia la
+#    versión optimizada (pantalla 1920x1080, 30 fps: la misma caché que usa el módulo "fondo").
+#    En segundo plano: la primera vez la copia puede tardar en crearse.
+SDDM_BG=/usr/share/sddm/themes/sddm-astronaut-theme/Backgrounds
+case "${ARCH,,}" in
+    *.mp4|*.webm|*.mkv|*.mov)
+        rm -f "$SDDM_BG/fondo-actual.gif"
+        setsid bash -c '
+            optimizada="$("$HOME/.local/bin/fondo-optimizar.sh" "$1" 1920 1080 30 | sed -n "s/^LISTO //p" | tail -n1)"
+            [ -n "$optimizada" ] || optimizada="$1"
+            # Solo si sigue siendo el fondo elegido (por si se cambió mientras tanto)
+            [ "$(cat "$HOME/.cache/wallpaper-actual")" = "$1" ] || exit 0
+            cp -f "$optimizada" "$2/.fondo-actual.mp4.tmp" && mv -f "$2/.fondo-actual.mp4.tmp" "$2/fondo-actual.mp4"
+        ' _ "$ARCH" "$SDDM_BG" >/dev/null 2>&1 < /dev/null &
+        ;;
+    *.gif)
+        rm -f "$SDDM_BG/fondo-actual.mp4"
+        cp -f "$ARCH" "$SDDM_BG/.fondo-actual.gif.tmp" && mv -f "$SDDM_BG/.fondo-actual.gif.tmp" "$SDDM_BG/fondo-actual.gif"
+        ;;
+    *)
+        rm -f "$SDDM_BG/fondo-actual.mp4" "$SDDM_BG/fondo-actual.gif"
+        ;;
+esac

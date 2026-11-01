@@ -51,7 +51,7 @@ Además:
 Requisitos: Arch Linux. **Todo viene de los repositorios oficiales**, no hace falta el AUR.
 
 ```bash
-git clone https://github.com/<tu-usuario>/niri-kde.git
+git clone https://github.com/Polaris09-1/niri-kde.git
 cd niri-kde
 ./install.sh --simular   # muestra lo que haría, sin cambiar nada
 ./install.sh             # instala (pregunta antes de cada paso)

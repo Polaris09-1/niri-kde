@@ -6,7 +6,7 @@ import QtQuick
 // Servidor de notificaciones propio (reemplaza a mako).
 // - "emergentes": los popups que se ven ahora (arriba a la derecha).
 // - "historial": todo lo recibido (se ve en el panel del reloj).
-// - No molestar: no salen popups (salvo las urgentes), pero sí se guardan en el historial.
+// - No molestar y pantalla completa: no salen popups (salvo las urgentes), pero sí se guardan en el historial.
 // El historial se copia en $XDG_RUNTIME_DIR/avisos (memoria, se borra al cerrar sesión)
 // para sobrevivir a un reinicio de la barra; tras reiniciar ya no tiene botones de acción.
 Scope {
@@ -25,6 +25,13 @@ Scope {
     }
     property int sinLeer: 0
     readonly property bool noMolestar: ajustes.noMolestar
+    // Hay una ventana a pantalla completa (lo pone la barra): como No molestar, pero sin cambiar el ajuste
+    property bool callarPantallaCompleta: false
+    readonly property bool callar: av.noMolestar || av.callarPantallaCompleta
+    // Al entrar en pantalla completa se retiran los popups normales que había (siguen en el historial)
+    onCallarPantallaCompletaChanged: if (callarPantallaCompleta)
+        for (var i = emergentes.count - 1; i >= 0; i--)
+            if (emergentes.get(i).urgencia !== 2) av.quitarEmergente(emergentes.get(i).clave)
 
     property ListModel historial: ListModel {}
     property ListModel emergentes: ListModel {}
@@ -146,7 +153,7 @@ Scope {
         n.imageChanged.connect(refresco)
 
         av.sinLeer++
-        if (!av.noMolestar || fila.urgencia === 2) av.mostrar(fila)
+        if (!av.callar || fila.urgencia === 2) av.mostrar(fila)
         guardar.restart()
     }
 
@@ -175,7 +182,7 @@ Scope {
         }
         var j = av.indice(emergentes, clave)
         if (j >= 0) emergentes.set(j, nueva)
-        else if (reaparecer && (!av.noMolestar || nueva.urgencia === 2)) av.mostrar(nueva)
+        else if (reaparecer && (!av.callar || nueva.urgencia === 2)) av.mostrar(nueva)
         guardar.restart()
     }
 

@@ -28,7 +28,7 @@ arranca niri:
 
 | Módulo | Qué hace |
 |---|---|
-| `hola` | Barra superior en islas: workspaces y ventana activa · hora (calendario + música) y campanita (avisos, No molestar) · bandeja y píldora de estado (wifi, bluetooth, audio, sistema, energía, capturas y grabación). Los paneles crecen desde su botón. Es también el servidor de notificaciones. |
+| `hola` | Barra superior en islas: workspaces y ventana activa · hora (calendario + música) y campanita (avisos, No molestar) · bandeja y píldora de estado (wifi, bluetooth, audio, sistema, energía, capturas y grabación). Los paneles crecen desde su botón. Es también el servidor de notificaciones. Con una ventana a pantalla completa se esconde como en macOS: baja al acercar el mouse al borde de arriba. |
 | `dock` | Dock flotante abajo, se oculta solo, efecto ola, puntito de apps abiertas, menú de clic derecho. |
 | `cajon` | Cajón de aplicaciones con buscador. |
 | `portapapeles` | Historial del portapapeles (texto e imágenes) estilo Win+V, que pega en la ventana anterior. |
@@ -42,9 +42,10 @@ arranca niri:
 
 Además:
 
+- **Pantalla completa como en macOS**: al poner una ventana a pantalla completa (F11, la F de YouTube o <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>) la barra sube y deja todo el espacio a la ventana; baja encima al acercar el mouse al borde de arriba (con sus paneles) y el dock aparece desde el borde de abajo. Mientras dura, los avisos normales van directo al historial; los urgentes, el OSD, el portapapeles y el bloqueo siguen saliendo encima. Se detecta por monitor con el `event-stream` de niri.
 - **niri**: animaciones propias sin rebote (abrir/cerrar con shader), sombras y borde con los colores del fondo.
 - **matugen**: plantillas para Quickshell, niri, alacritty, fuzzel, swaylock, GTK 3/4 (adw-gtk3), Qt (qt5ct/qt6ct), KDE (`kdeglobals`) y SDDM.
-- **Scripts** en `~/.local/bin`: `wallpaper.sh` (pone el fondo y regenera los colores), `fondo-fotograma.sh`, `aplicar-colores-apps.sh` y `bloquear.sh`.
+- **Scripts** en `~/.local/bin`: `wallpaper.sh` (pone el fondo y regenera los colores), `fondo-fotograma.sh`, `fondo-arrancar.sh` (arranca el fondo con decodificación por hardware si puede), `fondo-optimizar.sh` (copia del vídeo a tamaño de pantalla), `aplicar-colores-apps.sh` y `bloquear.sh`.
 - **SDDM**: tema [sddm-astronaut](https://github.com/Keyitdev/sddm-astronaut-theme) con un diseño propio (`Tarjeta.qml`) igual a la pantalla de bloqueo de Quickshell: tarjeta centrada translúcida, fondo actual (fotograma si es vídeo) difuminado, colores de matugen, fecha en español, campos de usuario y contraseña en pastilla, contador de intentos fallidos (5 → espera 2 min), selección de sesión y energía con cuenta atrás. Se guarda solo el parche, no el tema entero; para volver al diseño original: `MainScript=Main.qml` en `metadata.desktop`.
 
 ## Instalación

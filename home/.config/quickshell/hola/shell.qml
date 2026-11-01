@@ -20,6 +20,10 @@ Scope {
     property bool abrirAlPasar: true
     property int esperaAbrir: 60         // ms con el cursor sobre el botón antes de abrir
     property int esperaCerrar: 150       // ms fuera del botón y del panel antes de cerrar
+    // Pantalla completa (estilo macOS): la barra se esconde y deja de reservar su espacio; baja al
+    // acercar el mouse al borde de arriba (mismos tiempos que los paneles: esperaAbrir/esperaCerrar)
+    property bool esconderEnPantallaCompleta: true
+    property int altoSensor: 3           // px del borde superior que hacen bajar la barra
     property string fuente: "JetBrainsMono Nerd Font"
     property int altoIsla: 38
     property real opacidadIsla: 0.85
@@ -296,6 +300,8 @@ Scope {
         id: avisos
         historialVisible: root.panel === "avisos"
         emergentesVisibles: root.panel !== "avisos"
+        // En pantalla completa los avisos normales no salen como popup (van al historial); los urgentes sí
+        callarPantallaCompleta: root.pantallaCompleta
     }
     Emergentes {
         s: root
@@ -352,6 +358,36 @@ Scope {
         interval: root.esperaCerrar
         onTriggered: if (root.debeCerrar) root.panel = ""
     }
+    // ===== Pantalla completa: barra escondida que baja con el cursor =====
+    PantallaCompleta { id: pcompleta }
+    readonly property string salidaBarra: ventana.screen ? ventana.screen.name : ""
+    // simPantallaCompleta: solo pruebas por IPC ("si"|"no"|"" = lo que diga niri)
+    property string simPantallaCompleta: ""
+    readonly property bool pantallaCompleta: root.esconderEnPantallaCompleta
+        && (root.simPantallaCompleta !== "" ? root.simPantallaCompleta === "si" : pcompleta.en(root.salidaBarra))
+    property bool barraRevelada: false
+    readonly property bool barraOculta: root.pantallaCompleta && !root.barraRevelada
+    // El cursor está en el sensor o en la franja de la barra (o simulado por IPC), o hay un panel
+    readonly property bool mantenerBarra: hoverBarra.hovered || root.simCursor !== "" || root.panel !== ""
+    onPantallaCompletaChanged: root.revisarBarra()
+    onMantenerBarraChanged: root.revisarBarra()
+    function revisarBarra() {
+        if (!root.pantallaCompleta) { timerRevelar.stop(); timerEsconder.stop(); root.barraRevelada = false; return }
+        if (root.mantenerBarra) { timerEsconder.stop(); if (!root.barraRevelada) timerRevelar.restart() }
+        else { timerRevelar.stop(); if (root.barraRevelada) timerEsconder.restart() }
+    }
+    Timer {
+        id: timerRevelar
+        // Un panel abierto por IPC/atajo/dock (sin cursor) baja la barra al instante
+        interval: root.panel !== "" ? 0 : root.esperaAbrir
+        onTriggered: if (root.pantallaCompleta && root.mantenerBarra) root.barraRevelada = true
+    }
+    Timer {
+        id: timerEsconder
+        interval: root.esperaCerrar
+        onTriggered: if (!root.mantenerBarra) root.barraRevelada = false
+    }
+
     function abrirAlPasarSobre(nombre) {
         if (root.panel === nombre) return
         root.mostrarPanel(nombre)
@@ -433,6 +469,19 @@ Scope {
                 msCursorAPanel: root.tPanel >= root.tCursor ? root.tPanel - root.tCursor : -1 })
         }
         function cerrar(): void { root.panel = "" }
+        // Estado de la pantalla completa (lo que dice niri y lo que hace la barra)
+        function pantallaCompleta(): string {
+            return JSON.stringify({ salida: root.salidaBarra, pantallaCompleta: root.pantallaCompleta,
+                niri: pcompleta.porSalida, ventana: pcompleta.ventanaPorSalida, vistaGeneral: pcompleta.vistaGeneral,
+                simulada: root.simPantallaCompleta, revelada: root.barraRevelada, oculta: root.barraOculta,
+                cursorArriba: hoverBarra.hovered, zona: ventana.exclusiveZone,
+                avisosCallados: avisos.callarPantallaCompleta })
+        }
+        // si | no | auto (para probar sin una ventana a pantalla completa)
+        function simularPantallaCompleta(v: string): string {
+            root.simPantallaCompleta = v === "auto" ? "" : v
+            return root.pantallaCompleta ? "si" : "no"
+        }
         // ----- Notificaciones -----
         // qs -c hola ipc call hola notificaciones   → estado + historial (JSON)
         function notificaciones(): string {
@@ -615,21 +664,30 @@ Scope {
             right: true
         }
         implicitHeight: root.altoIsla + 20
-        exclusionMode: ExclusionMode.Normal
-        exclusiveZone: root.altoIsla + 12
+        // En pantalla completa no reserva espacio (la ventana ocupa todo y la barra baja encima)
+        exclusionMode: root.pantallaCompleta ? ExclusionMode.Ignore : ExclusionMode.Normal
+        exclusiveZone: root.pantallaCompleta ? 0 : root.altoIsla + 12
         color: "transparent"
         WlrLayershell.layer: WlrLayer.Overlay
         WlrLayershell.namespace: "hola"
 
-        // Las islas son lo único clicable; el resto deja pasar el mouse
-        mask: Region {
+        // Normal: las islas son lo único clicable; el resto deja pasar el mouse.
+        // Pantalla completa escondida: solo el sensor fino del borde de arriba.
+        // Pantalla completa bajada: toda la franja (pasar de una isla a otra no la esconde).
+        mask: root.pantallaCompleta ? (root.barraRevelada ? regionFranja : regionSensor) : regionIslas
+        property Region regionIslas: Region {
             Region { item: islaIzq }
             Region { item: islaReloj }
             Region { item: islaDer }
         }
+        property Region regionSensor: Region { x: 0; y: 0; width: ventana.width; height: root.altoSensor }
+        property Region regionFranja: Region { x: 0; y: 0; width: ventana.width; height: ventana.height }
 
         Item {
             anchors.fill: parent
+
+            // No se desplaza: así cubre el sensor aunque las islas estén escondidas arriba
+            HoverHandler { id: hoverBarra }
 
             // Entrada con rebote al arrancar
             Item {
@@ -638,12 +696,24 @@ Scope {
                 Behavior on opacity {
                     NumberAnimation { duration: 250 }
                 }
-                transform: Translate {
-                    y: root.mostrar ? 0 : -(root.altoIsla + 30)
-                    Behavior on y {
-                        NumberAnimation { duration: 400; easing.type: Easing.OutBack }
+                transform: [
+                    Translate {
+                        y: root.mostrar ? 0 : -(root.altoIsla + 30)
+                        Behavior on y {
+                            NumberAnimation { duration: 400; easing.type: Easing.OutBack }
+                        }
+                    },
+                    // Pantalla completa: sube y baja (sin rebote: 150 ms al bajar, 120 al subir)
+                    Translate {
+                        y: root.barraOculta ? -(root.altoIsla + 20) : 0
+                        Behavior on y {
+                            NumberAnimation {
+                                duration: root.barraOculta ? 120 : 150
+                                easing.type: root.barraOculta ? Easing.InCubic : Easing.OutCubic
+                            }
+                        }
                     }
-                }
+                ]
 
                 // ---------- Isla izquierda: workspaces + ventana activa ----------
                 Rectangle {

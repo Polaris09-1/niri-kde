@@ -328,6 +328,10 @@ Scope {
         && !root.cursorEnPanel && root.botonBajoCursor === "" && !root.retener
 
     onDebeCerrarChanged: debeCerrar ? timerCerrar.restart() : timerCerrar.stop()
+    // Cambiar de página (Wi-Fi, Bluetooth, Audio…) en un panel abierto al pasar el cursor lo deja
+    // fijo, como un clic en su botón: la página nueva puede ser más baja que el inicio y dejar el
+    // cursor fuera del panel, y entonces se cerraba solo a los 150 ms sin llegar a abrirse
+    onPaginaChanged: if (root.panel === "estado" && root.pagina !== "inicio") { timerCerrar.stop(); root.porClic = true }
     onPanelChanged: { if (root.panel === "") root.porClic = false; root.tPanel = Date.now() }
     // Solo para medir por IPC (hola hover): momento del último cursor simulado y del último cambio de panel
     property real tCursor: 0
@@ -1153,21 +1157,27 @@ Scope {
                         spacing: 10
 
                         Repeater {
-                            model: [
-                                { pag: "wifi", titulo: root.wifiNombre !== "" ? root.wifiNombre : "Wi-Fi",
-                                  detalle: root.wifiSenal >= 0 ? "Señal " + root.wifiSenal + "%" : "Sin conexión",
-                                  icono: root.iconoWifi(), activo: root.wifiSenal >= 0 },
-                                { pag: "bluetooth", titulo: "Bluetooth", detalle: root.textoBluetooth(),
-                                  icono: root.ic(root.btConectado ? 0xF00B1 : root.btAdaptador && root.btAdaptador.enabled ? 0xF00AF : 0xF00B2),
-                                  activo: root.btAdaptador !== null && root.btAdaptador.enabled }
-                            ]
+                            // Modelo fijo: si dependiera de la señal o del bluetooth, el Repeater
+                            // recrearía las tarjetas en cada sondeo (cada 10 s) y se perdería el clic
+                            model: ["wifi", "bluetooth"]
                             delegate: Rectangle {
                                 id: tarjeta
                                 required property var modelData
+                                readonly property bool esWifi: tarjeta.modelData === "wifi"
+                                readonly property string pag: tarjeta.modelData
+                                readonly property string titulo: tarjeta.esWifi
+                                    ? (root.wifiNombre !== "" ? root.wifiNombre : "Wi-Fi") : "Bluetooth"
+                                readonly property string detalle: tarjeta.esWifi
+                                    ? (root.wifiSenal >= 0 ? "Señal " + root.wifiSenal + "%" : "Sin conexión")
+                                    : root.textoBluetooth()
+                                readonly property string icono: tarjeta.esWifi ? root.iconoWifi()
+                                    : root.ic(root.btConectado ? 0xF00B1 : root.btAdaptador && root.btAdaptador.enabled ? 0xF00AF : 0xF00B2)
+                                readonly property bool activo: tarjeta.esWifi ? root.wifiSenal >= 0
+                                    : root.btAdaptador !== null && root.btAdaptador.enabled
                                 width: (colEstado.width - 10) / 2
                                 height: 56
                                 radius: 16
-                                color: tarjeta.modelData.activo ? root.alfa(tema.primary, maTarjeta.containsMouse ? 0.3 : 0.2)
+                                color: tarjeta.activo ? root.alfa(tema.primary, maTarjeta.containsMouse ? 0.3 : 0.2)
                                     : root.alfa(tema.primary, maTarjeta.containsMouse ? 0.16 : 0.07)
                                 scale: maTarjeta.pressed ? 0.96 : 1
                                 Behavior on color {
@@ -1180,7 +1190,7 @@ Scope {
                                     id: icTarjeta
                                     x: 12
                                     anchors.verticalCenter: parent.verticalCenter
-                                    text: tarjeta.modelData.icono
+                                    text: tarjeta.icono
                                     font.family: root.fuente
                                     font.pixelSize: 20
                                     color: tema.primary
@@ -1194,7 +1204,7 @@ Scope {
                                     Text {
                                         width: parent.width
                                         elide: Text.ElideRight
-                                        text: tarjeta.modelData.titulo
+                                        text: tarjeta.titulo
                                         font.family: root.fuente
                                         font.pixelSize: 12
                                         font.bold: true
@@ -1203,7 +1213,7 @@ Scope {
                                     Text {
                                         width: parent.width
                                         elide: Text.ElideRight
-                                        text: tarjeta.modelData.detalle
+                                        text: tarjeta.detalle
                                         font.family: root.fuente
                                         font.pixelSize: 10
                                         color: root.alfa(tema.surfaceText, 0.65)
@@ -1214,7 +1224,7 @@ Scope {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: root.pagina = tarjeta.modelData.pag
+                                    onClicked: root.pagina = tarjeta.pag
                                 }
                             }
                         }

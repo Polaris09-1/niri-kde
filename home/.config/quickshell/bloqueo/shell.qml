@@ -71,6 +71,8 @@ ShellRoot {
 
     // ===== Estado =====
     property bool bloqueado: false
+    // Avisa al fondo animado para que pause el vídeo mientras está bloqueado (y con la pantalla apagada)
+    onBloqueadoChanged: Quickshell.execDetached(["qs", "-c", "fondo", "ipc", "call", "fondo", "bloqueo", root.bloqueado ? "si" : "no"])
     property real horaBloqueo: 0
     property bool verificando: false
     property string error: ""

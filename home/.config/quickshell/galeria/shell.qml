@@ -209,6 +209,10 @@ Scope {
             property string transicion: "circulo"
             property int duracion: 800
             property bool pausarTapado: true
+            // Los usa el módulo "fondo" (aquí solo para no borrarlos al guardar)
+            property bool pausarConBateria: false
+            property bool optimizarVideo: true
+            property int fpsVideo: 30
         }
     }
 

@@ -1,6 +1,7 @@
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
+import Quickshell.Services.UPower
 import QtQuick
 import QtQuick.Effects
 
@@ -14,6 +15,10 @@ import QtQuick.Effects
 //        tipo: circulo | ola | barrido | fundido | aleatoria | - (el de ajustes.json)
 //        x y: punto de origen en píxeles de la pantalla (-1 -1 = centro)
 //   qs -c fondo ipc call fondo info        (estado en JSON)
+//   qs -c fondo ipc call fondo bloqueo si|no   (lo llama el módulo "bloqueo": pausa el vídeo)
+//
+// Rendimiento (2026-11-01): arrancar SIEMPRE con ~/.local/bin/fondo-arrancar.sh (VA-API en la
+// Radeon); el vídeo se reproduce desde una copia ajustada a la pantalla (fondo-optimizar.sh).
 Scope {
     id: root
 
@@ -32,7 +37,10 @@ Scope {
             id: ajustes
             property string transicion: "circulo"   // circulo | ola | barrido | fundido | aleatoria
             property int duracion: 800              // ms
-            property bool pausarTapado: true        // pausar vídeo/GIF si una ventana lo tapa
+            property bool pausarTapado: true        // pausar vídeo/GIF si las ventanas tapan el escritorio
+            property bool pausarConBateria: false   // pausar vídeo/GIF cuando no está enchufado
+            property bool optimizarVideo: true      // reproducir una copia al tamaño de la pantalla
+            property int fpsVideo: 30               // fps máximos de esa copia (24-30 va bien)
         }
     }
 
@@ -41,14 +49,20 @@ Scope {
     property string rutaImagen: ""    // imagen fija (fotograma si es vídeo/GIF)
     property bool usarA: true         // qué lienzo es el actual
     property bool enTransicion: false
-    property bool tapado: false       // una ventana grande tapa el workspace visible
+    property bool tapado: false       // las ventanas tapan (casi) todo el workspace visible
+    property real cobertura: 0        // fracción de pantalla tapada (para "info")
+    property bool bloqueado: false    // sesión bloqueada (avisa el módulo "bloqueo")
     property bool primeraVez: true
     property var pendiente: null      // { tipo, x, y } mientras carga el fondo nuevo
 
     readonly property var lienzoActual: usarA ? lienzoA : lienzoB
     readonly property var lienzoOtro: usarA ? lienzoB : lienzoA
     readonly property bool animado: lienzoActual.tipo === "video" || lienzoActual.tipo === "gif"
-    readonly property bool pausado: ajustes.pausarTapado && tapado
+    readonly property bool conBateria: UPower.onBattery
+    readonly property string motivoPausa: root.bloqueado ? "bloqueo"
+        : (ajustes.pausarTapado && root.tapado) ? "tapado"
+        : (ajustes.pausarConBateria && root.conBateria) ? "bateria" : ""
+    readonly property bool pausado: root.motivoPausa !== ""
 
     readonly property var tipos: ({ fundido: 0, circulo: 1, ola: 2, barrido: 3 })
 
@@ -70,7 +84,14 @@ Scope {
             if (m) tema.surface = m[1]
         }
     }
-    Component.onCompleted: Quickshell.watchFiles = false
+    Component.onCompleted: { Quickshell.watchFiles = false; preguntarBloqueo.running = true }
+    Process {
+        id: preguntarBloqueo
+        command: ["qs", "-c", "bloqueo", "ipc", "call", "bloqueo", "estado"]
+        stdout: StdioCollector {
+            onStreamFinished: root.bloqueado = text.trim() === "seguro" || text.trim() === "bloqueando"
+        }
+    }
 
     function poner(nueva, tipo, x, y) {
         if (nueva === "") return
@@ -137,15 +158,27 @@ Scope {
         function captura(archivo: string): void {
             escenaNitida.grabToImage(r => r.saveToFile(archivo), Qt.size(960, 540))
         }
+        function bloqueo(estado: string): string {
+            root.bloqueado = estado === "si"
+            return root.bloqueado ? "pausado" : "reanudado"
+        }
         function info(): string {
             return JSON.stringify({
                 ruta: root.ruta,
                 imagen: root.rutaImagen,
                 tipo: root.lienzoActual.tipo,
+                video: root.lienzoActual.rutaVideo,
+                estadoVideo: root.lienzoActual.estadoVideo,
                 listo: root.lienzoActual.listo,
                 enTransicion: root.enTransicion,
                 tapado: root.tapado,
+                cobertura: Math.round(root.cobertura * 100) / 100,
+                bloqueado: root.bloqueado,
+                conBateria: root.conBateria,
                 pausado: root.pausado && root.animado,
+                motivoPausa: root.animado ? root.motivoPausa : "",
+                ajustesVideo: { pausarTapado: ajustes.pausarTapado, pausarConBateria: ajustes.pausarConBateria,
+                                optimizar: ajustes.optimizarVideo, fps: ajustes.fpsVideo },
                 transicion: ajustes.transicion,
                 duracion: ajustes.duracion,
                 superficie: tema.surface.toString()
@@ -235,18 +268,37 @@ Scope {
                     var activos = ws.filter(w => w.is_active && (salida === "" || w.output === salida))
                     var ids = activos.map(w => w.id)
                     var enfocadas = activos.map(w => w.active_window_id)
-                    var area = nitida.width * nitida.height
-                    // Tapa el fondo: la ventana activa del workspace visible (en mosaico, niri la
-                    // mantiene a la vista) o una flotante visible, si ocupa casi toda la pantalla
-                    // (pantalla completa o maximizada).
-                    root.tapado = ventanas.some(v => {
-                        if (ids.indexOf(v.workspace_id) < 0 || !v.layout) return false
-                        var aLaVista = v.is_floating ? v.layout.tile_pos_in_workspace_view !== null
-                                                     : enfocadas.indexOf(v.id) >= 0
-                        if (!aLaVista) return false
-                        var t = v.layout.tile_size
-                        return t[0] * t[1] >= 0.85 * area
+                    var W = nitida.width, H = nitida.height
+                    var area = W * H
+                    var vis = ventanas.filter(v => ids.indexOf(v.workspace_id) >= 0 && v.layout)
+                    // Flotantes a la vista: la más grande
+                    var flotante = 0
+                    vis.forEach(v => {
+                        if (v.is_floating && v.layout.tile_pos_in_workspace_view !== null)
+                            flotante = Math.max(flotante, v.layout.tile_size[0] * v.layout.tile_size[1])
                     })
+                    // Mosaico (niri en scroll): por columna, ancho = el de su ventana más ancha y
+                    // alto = suma de sus ventanas. Si las columnas juntas llenan el ancho, niri
+                    // siempre muestra la pantalla llena; si no, solo tapan lo que miden.
+                    var columnas = {}
+                    vis.forEach(v => {
+                        var pos = v.layout.pos_in_scrolling_layout
+                        if (v.is_floating || !pos) return
+                        var k = v.workspace_id + ":" + pos[0]
+                        var c = columnas[k] || { w: 0, h: 0 }
+                        c.w = Math.max(c.w, v.layout.tile_size[0])
+                        c.h += v.layout.tile_size[1]
+                        columnas[k] = c
+                    })
+                    var ancho = 0, alto = 0
+                    Object.keys(columnas).forEach(k => {
+                        ancho += columnas[k].w + 16          // + hueco entre columnas
+                        alto = Math.max(alto, columnas[k].h)
+                    })
+                    var mosaico = Math.min(W, ancho) * Math.min(H, alto)
+                    root.cobertura = Math.min(1, Math.max(mosaico, flotante) / Math.max(1, area))
+                    // ≥ 85 %: pantalla completa, maximizada o columnas que llenan la pantalla
+                    root.tapado = root.cobertura >= 0.85
                 } catch (e) {
                     console.warn("fondo: no pude leer niri:", e)
                 }
@@ -275,6 +327,8 @@ Scope {
         Lienzo {
             id: lienzoA
             anchors.fill: parent
+            optimizar: ajustes.optimizarVideo
+            fps: ajustes.fpsVideo
             z: root.usarA ? 1 : 0
             pausado: root.pausado && root.usarA && !root.enTransicion
             onListoChanged: if (listo && !root.usarA && root.pendiente) root.empezar()
@@ -282,6 +336,8 @@ Scope {
         Lienzo {
             id: lienzoB
             anchors.fill: parent
+            optimizar: ajustes.optimizarVideo
+            fps: ajustes.fpsVideo
             z: root.usarA ? 0 : 1
             pausado: root.pausado && !root.usarA && !root.enTransicion
             onListoChanged: if (listo && root.usarA && root.pendiente) root.empezar()

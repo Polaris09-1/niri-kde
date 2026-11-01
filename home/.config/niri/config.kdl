@@ -676,7 +676,8 @@ layer-rule {
     place-within-backdrop true
 }
 
-spawn-at-startup "quickshell" "-c" "fondo"
+// fondo: con VA-API en la Radeon y vídeo optimizado (ver ~/.local/bin/fondo-arrancar.sh)
+spawn-at-startup "@HOME@/.local/bin/fondo-arrancar.sh"
 
 window-rule {
     background-effect {

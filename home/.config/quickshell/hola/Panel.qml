@@ -21,6 +21,9 @@ Item {
     readonly property bool encima: vivo && sobreCaja.hovered
     readonly property bool pulsado: vivo && pulsacion.active
     default property alias contenido: interior.data
+    // Una pulsación dentro de la caja (posición en la escena): la usa la barra para soltar el foco
+    // de un campo de texto al hacer clic en otra cosa
+    signal presion(point posicion)
 
     property real xFinal: Math.max(margen, Math.min(width - anchoFinal - margen,
         origen.x + origen.width / 2 - anchoFinal / 2))
@@ -93,9 +96,8 @@ Item {
             onWheel: w => w.accepted = true
         }
 
-        // Pasivos: no roban clics, solo avisan de que el cursor está aquí o arrastrando
+        // Pasivo: no roba clics, solo avisa de que el cursor está aquí
         HoverHandler { id: sobreCaja }
-        PointHandler { id: pulsacion }
 
         // El contenido se estira con la caja: nunca se sale de ella
         Item {
@@ -106,6 +108,19 @@ Item {
             transform: Scale {
                 xScale: caja.width / panel.anchoFinal
                 yScale: caja.height / panel.altoFinal
+            }
+        }
+
+        // Pulsación/arrastre dentro de la caja. Va ENCIMA del contenido: Qt entrega la pulsación
+        // de arriba abajo y un MouseArea que la acepta corta el reparto, así que debajo (como
+        // estaba antes) nunca se enteraba. Un PointHandler solo toma una captura pasiva: el clic
+        // sigue llegando al botón de debajo.
+        Item {
+            anchors.fill: parent
+            z: 1000
+            PointHandler {
+                id: pulsacion
+                onActiveChanged: if (active) panel.presion(pulsacion.point.scenePosition)
             }
         }
     }

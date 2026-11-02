@@ -572,6 +572,7 @@ Item {
                                         if (campoClave.text.length === 0) return
                                         var clave = campoClave.text
                                         campoClave.text = ""
+                                        w.s.soltarFoco()
                                         w.conectar(fila.modelData, clave)
                                     }
                                     Text {

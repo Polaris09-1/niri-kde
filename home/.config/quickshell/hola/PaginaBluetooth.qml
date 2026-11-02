@@ -220,7 +220,7 @@ Item {
                         color: b.tema.surfaceText
                         inputMethodHints: Qt.ImhDigitsOnly
                         maximumLength: 16
-                        onAccepted: { b.agente.responder(true, campoPin.text); campoPin.text = "" }
+                        onAccepted: { b.agente.responder(true, campoPin.text); campoPin.text = ""; b.s.soltarFoco() }
                     }
                 }
 
@@ -232,14 +232,14 @@ Item {
                         tema: b.tema
                         fuente: b.s.fuente
                         texto: "Rechazar"
-                        onClic: b.agente.responder(false)
+                        onClic: { b.agente.responder(false); campoPin.text = ""; b.s.soltarFoco() }
                     }
                     BotonTexto {
                         tema: b.tema
                         fuente: b.s.fuente
                         texto: "Aceptar"
                         lleno: true
-                        onClic: { b.agente.responder(true, campoPin.text); campoPin.text = "" }
+                        onClic: { b.agente.responder(true, campoPin.text); campoPin.text = ""; b.s.soltarFoco() }
                     }
                 }
             }

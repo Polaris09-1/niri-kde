@@ -342,7 +342,7 @@ Scope {
         : root.simCursor === "campana" || campana.encima ? "avisos"
         : root.simCursor === "pildora" || maPildora.containsMouse ? "estado" : ""
     readonly property bool cursorEnPanel: root.simCursor === "panel"
-        || (root.panel === "estado" && (panelEstado.encima || panelEstado.pulsado))
+        || (root.panel === "estado" && (panelEstado.encima || panelEstado.pulsado || root.cursorEnGracia))
         || (root.relojAbierto && (panelCal.encima || panelCal.pulsado))
     // Diálogos de confirmación abiertos (no cerrar aunque el cursor salga)
     readonly property bool hayDialogo: agenteBt.solicitud !== null
@@ -354,11 +354,39 @@ Scope {
         && !root.cursorEnPanel && root.botonBajoCursor === "" && !root.retener
 
     onDebeCerrarChanged: debeCerrar ? timerCerrar.restart() : timerCerrar.stop()
-    // Cambiar de página (Wi-Fi, Bluetooth, Audio…) en un panel abierto al pasar el cursor lo deja
-    // fijo, como un clic en su botón: la página nueva puede ser más baja que el inicio y dejar el
-    // cursor fuera del panel, y entonces se cerraba solo a los 150 ms sin llegar a abrirse
-    onPaginaChanged: if (root.panel === "estado" && root.pagina !== "inicio") { timerCerrar.stop(); root.porClic = true }
-    onPanelChanged: { if (root.panel === "") root.porClic = false; root.tPanel = Date.now() }
+    // Cambiar de página NO deja el panel fijo (solo retienen: escribir, arrastrar o un diálogo).
+    // Pero la página nueva puede ser más baja y dejar el cursor fuera de la caja: mientras el cursor
+    // siga dentro del rectángulo que ocupaba el panel antes del cambio ("zona de gracia") cuenta como
+    // dentro; al salir de esa zona (o al cerrarse el panel) la gracia se acaba y cierra como siempre.
+    property bool enGracia: false
+    property rect zonaGracia: Qt.rect(0, 0, 0, 0)
+    readonly property bool cursorEnGracia: root.enGracia && cursorCapa.hovered
+        && cursorCapa.point.position.x >= root.zonaGracia.x
+        && cursorCapa.point.position.x <= root.zonaGracia.x + root.zonaGracia.width
+        && cursorCapa.point.position.y >= root.zonaGracia.y
+        && cursorCapa.point.position.y <= root.zonaGracia.y + root.zonaGracia.height
+    onCursorEnGraciaChanged: if (!root.cursorEnGracia) root.enGracia = false
+    onPaginaChanged: {
+        if (root.panel !== "estado") return
+        // altoFinal tiene Behavior: aquí todavía vale el alto de la página anterior
+        root.zonaGracia = Qt.rect(panelEstado.xFinal, panelEstado.arriba, panelEstado.anchoFinal,
+            Math.max(panelEstado.altoFinal, 36 + colEstado.implicitHeight))
+        root.enGracia = true
+    }
+    onPanelChanged: { if (root.panel === "") { root.porClic = false; root.enGracia = false } root.tPanel = Date.now() }
+
+    // Suelta el foco de un campo de texto (vuelve a la capa: Esc sigue funcionando) para que el
+    // panel deje de retenerse en cuanto terminas de escribir
+    function soltarFoco() { raizCapa.forceActiveFocus() }
+    // Clic dentro de un panel: si hay un campo de texto con foco y el clic no fue en su marco
+    // (el campo + su ojito), el foco se suelta
+    function revisarFoco(pos) {
+        var f = raizCapa.Window.activeFocusItem
+        if (!f || f === raizCapa || f.cursorPosition === undefined) return
+        var marco = f.parent || f
+        var q = marco.mapFromItem(null, pos.x, pos.y)
+        if (q.x < 0 || q.y < 0 || q.x > marco.width || q.y > marco.height) root.soltarFoco()
+    }
     // Solo para medir por IPC (hola hover): momento del último cursor simulado y del último cambio de panel
     property real tCursor: 0
     property real tPanel: 0
@@ -485,6 +513,7 @@ Scope {
         function hover(): string {
             return JSON.stringify({ panel: root.panel, porClic: root.porClic, bajoCursor: root.botonBajoCursor,
                 enPanel: root.cursorEnPanel, escribiendo: root.escribiendo, dialogo: root.hayDialogo,
+                gracia: root.enGracia, pulsado: panelEstado.pulsado || panelCal.pulsado,
                 abriendo: timerAbrir.running, cerrando: timerCerrar.running,
                 msCursorAPanel: root.tPanel >= root.tCursor ? root.tPanel - root.tCursor : -1 })
         }
@@ -1091,6 +1120,8 @@ Scope {
             id: raizCapa
             anchors.fill: parent
             focus: true
+            // Posición del cursor en toda la capa (para la zona de gracia al cambiar de página)
+            HoverHandler { id: cursorCapa }
             // ¿Hay un campo de texto con el cursor de escritura? (contraseña wifi, PIN bluetooth…)
             readonly property bool escribiendo: {
                 var f = Window.activeFocusItem
@@ -1114,6 +1145,7 @@ Scope {
                 id: panelEstado
                 anchors.fill: parent
                 tema: tema
+                onPresion: pos => root.revisarFoco(pos)
                 abierto: root.panel === "estado"
                 origen: root.origenEstado
                 anchoFinal: 380
@@ -1693,6 +1725,7 @@ Scope {
                 id: panelCal
                 anchors.fill: parent
                 tema: tema
+                onPresion: pos => root.revisarFoco(pos)
                 abierto: root.relojAbierto
                 origen: root.modoReloj === "avisos" ? root.origenAvisos : root.origenCal
                 anchoFinal: root.modoReloj === "avisos" ? 340 + 36 : 294 + 36

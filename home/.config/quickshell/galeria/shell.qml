@@ -6,7 +6,8 @@ import QtQuick
 import QtQuick.Effects
 import Qt.labs.folderlistmodel
 
-// Galería de fondos: carrusel 3D con vista previa a pantalla completa
+// Galería de fondos: carrusel infinito (tarjeta grande + franjas) con vista previa a pantalla completa
+// (vídeo/GIF animado en la tarjeta del centro y en el fondo grande)
 // y vista previa de la paleta de matugen antes de aplicar.
 Scope {
     id: root
@@ -14,16 +15,45 @@ Scope {
     // ===== Ajustes =====
     property string carpeta: Quickshell.env("HOME") + "/Pictures/wallpapers"
     property string script: Quickshell.env("HOME") + "/.local/bin/wallpaper.sh"
-    property int anchoTarjeta: 440          // ancho de cada miniatura
-    property real giro: 38                  // grados de giro 3D de las tarjetas laterales
+    property int anchoTarjeta: 440          // ancho de la tarjeta del centro
+    readonly property real altoTarjeta: anchoTarjeta * 9 / 16
+    property int anchoFranja: 64            // tarjetas de los costados: franjas verticales
+    property int ensancheFranja: 26         // cuánto se ensancha una franja al pasar el cursor
+    property int hueco: 14                  // separación entre tarjetas
+    property int franjasPorLado: 6          // como máximo (sin repetir fondos)
+    property int duracionMovimiento: 420
 
     // ===== Estado =====
     property bool abierto: false
     property bool aplicando: false
     property string actual: ""              // fondo aplicado ahora
+    // ===== Carrusel infinito =====
+    // "objetivo" es un índice SIN límite (… -1, 0, 1, 2 …); la tarjeta real es objetivo mod n.
+    // Así, después del último viene el primero (y al revés) sin rebobinar: el carrusel solo
+    // sigue avanzando. carrusel.pos persigue a objetivo con animación.
+    readonly property int n: carpetaModelo.count
+    property int objetivo: 0
+    property bool animar: true
+    readonly property int indice: root.n > 0 ? root.mod(root.objetivo, root.n) : -1
+    // Ranuras de tarjetas: nunca más que fondos (con 1 o 2 no se repite ninguno)
+    readonly property int ranuras: Math.min(root.n, 2 * root.franjasPorLado + 1)
+    // Ventana visible alrededor de pos: [pos - margen, pos - margen + ranuras)
+    readonly property real margenVentana: Math.floor((root.ranuras - 1) / 2) + 0.5
+    property int version: 0                 // sube al cambiar la carpeta (get() no avisa)
+    function mod(a, m) { return ((a % m) + m) % m }
+    function rutaEn(i) { root.version; return i >= 0 && i < carpetaModelo.count ? carpetaModelo.get(i, "filePath") : "" }
+    function mover(paso) { if (root.n > 1) root.objetivo += paso }
+    // Ir a la tarjeta i por el camino más corto (dando la vuelta si hace falta)
+    function irA(i) {
+        if (root.n < 1 || i < 0 || i >= root.n) return
+        var d = root.mod(i - root.indice, root.n)
+        if (d > root.n / 2) d -= root.n
+        root.objetivo += d
+    }
+
     // La tarjeta seleccionada (la del centro): de ella salen el título, la paleta,
     // la vista previa grande y el contador. Pasar el cursor por otra NO cambia nada.
-    property string elegido: lista.currentItem ? lista.currentItem.filePath : ""
+    property string elegido: root.rutaEn(root.indice)
     // Lo que se previsualiza: el que está bajo el ratón, o el del centro
     property string vista: elegido
 
@@ -77,14 +107,15 @@ Scope {
             root.aplicar(carpetaModelo.get(i, "filePath"), x, y)
         }
         // Para probar: selecciona (centra) la tarjeta i, sin aplicar
-        function elegir(i: int): void {
-            if (i >= 0 && i < carpetaModelo.count) lista.currentIndex = i
-        }
+        function elegir(i: int): void { root.irA(i) }
+        // Para probar el carrusel infinito: avanza (+) o retrocede (-) varias tarjetas
+        function mover(pasos: int): string { root.mover(pasos); return root.indice + " " + root.objetivo }
         function info(): string {
             var l = []
             for (var i = 0; i < carpetaModelo.count; i++) l.push(carpetaModelo.get(i, "filePath"))
             return JSON.stringify({ abierto: root.abierto, actual: root.actual, fondos: l,
-                                    indice: lista.currentIndex, elegido: root.elegido,
+                                    indice: root.indice, objetivo: root.objetivo, pos: carrusel.pos,
+                                    ranuras: root.ranuras, animada: previaAnim.info(), elegido: root.elegido,
                                     vista: root.vista, titulo: titulo.text, contador: contador.text,
                                     previa: (previa.usarA ? imgA : imgB).source.toString(),
                                     paleta: root.pal ? root.pal.primary : null,
@@ -98,11 +129,12 @@ Scope {
         root.aplicando = false
         ventana.visible = true
         root.abierto = true
-        // Empieza en el fondo actual
+        // Empieza en el fondo actual, sin animar el salto
         for (var i = 0; i < carpetaModelo.count; i++) {
             if (carpetaModelo.get(i, "filePath") === root.actual) {
-                lista.currentIndex = i
-                lista.positionViewAtIndex(i, ListView.Center)
+                root.animar = false
+                root.objetivo = i
+                root.animar = true
                 break
             }
         }
@@ -115,7 +147,7 @@ Scope {
     }
 
     function aplicarCentro() {
-        var p = lista.mapToItem(escena, lista.width / 2, 16 + root.anchoTarjeta * 9 / 32)
+        var p = carrusel.mapToItem(escena, carrusel.width / 2, 16 + root.altoTarjeta / 2)
         aplicar(root.elegido, p.x, p.y)
     }
 
@@ -160,8 +192,8 @@ Scope {
                       "*.mp4", "*.webm", "*.mkv", "*.mov", "*.gif", "*.MP4", "*.GIF"]
         showDirs: false
         sortField: FolderListModel.Name
-        onStatusChanged: if (status === FolderListModel.Ready) buscarFotogramas.restart()
-        onCountChanged: buscarFotogramas.restart()
+        onStatusChanged: { root.version++; if (status === FolderListModel.Ready) buscarFotogramas.restart() }
+        onCountChanged: { root.version++; buscarFotogramas.restart() }
     }
 
     // ===== Fotogramas de vídeos/GIF (miniatura, vista previa y paleta) =====
@@ -334,6 +366,23 @@ Scope {
                     }
                 }
 
+                // Vídeo/GIF en bucle y sin sonido encima de su fotograma (aparece con fundido
+                // cuando ya hay imagen; se detiene al cerrar la galería)
+                Item {
+                    anchors.fill: parent
+                    opacity: previaAnim.listo && previaAnim.reproduciendo === root.vista ? 1 : 0
+                    Behavior on opacity {
+                        NumberAnimation { duration: 350; easing.type: Easing.InOutQuad }
+                    }
+                    PreviaAnimada {
+                        id: previaAnim
+                        anchors.fill: parent
+                        ruta: root.abierto && root.esAnimado(root.vista) ? root.vista : ""
+                        anchoV: ventana.width > 0 ? Math.round(ventana.width) : 1920
+                        altoV: ventana.height > 0 ? Math.round(ventana.height) : 1080
+                    }
+                }
+
                 // Clic en el fondo: cerrar
                 MouseArea {
                     anchors.fill: parent
@@ -368,7 +417,7 @@ Scope {
                     id: encabezado
                     anchors.left: parent.left
                     anchors.leftMargin: 70
-                    anchors.bottom: lista.top
+                    anchors.bottom: carrusel.top
                     anchors.bottomMargin: 10
                     spacing: 10
                     opacity: root.abierto ? 1 : 0
@@ -402,7 +451,7 @@ Scope {
                             Text {
                                 id: contador
                                 anchors.centerIn: parent
-                                text: (lista.currentIndex + 1) + " / " + carpetaModelo.count
+                                text: (root.indice + 1) + " / " + root.n
                                 color: c.primary
                                 font.pixelSize: 11
                                 font.bold: true
@@ -482,7 +531,7 @@ Scope {
                 Column {
                     anchors.right: parent.right
                     anchors.rightMargin: 70
-                    anchors.bottom: lista.top
+                    anchors.bottom: carrusel.top
                     anchors.bottomMargin: 18
                     spacing: 8
                     opacity: root.abierto ? 1 : 0
@@ -573,23 +622,24 @@ Scope {
                     }
                 }
 
-                // ----- Carrusel 3D -----
-                ListView {
-                    id: lista
+                // ----- Carrusel infinito: tarjeta grande en el centro y franjas a los lados -----
+                // Hay "ranuras" fijas (como mucho una por fondo). Cada ranura j muestra la tarjeta
+                // lógica L ≡ j (mód ranuras) que cae en la ventana visible alrededor de pos; al salir
+                // por un borde (ya transparente) reaparece por el otro con su siguiente tarjeta. Así
+                // nunca se rebobina y nunca hay dos tarjetas iguales a la vez.
+                Item {
+                    id: carrusel
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.bottom: ayudas.top
                     anchors.bottomMargin: 16
-                    height: root.anchoTarjeta * 9 / 16 + 110
-                    orientation: ListView.Horizontal
-                    model: carpetaModelo
-                    spacing: -root.anchoTarjeta * 0.18
-                    cacheBuffer: 4000
-                    highlightRangeMode: ListView.StrictlyEnforceRange
-                    preferredHighlightBegin: width / 2 - root.anchoTarjeta / 2
-                    preferredHighlightEnd: width / 2 + root.anchoTarjeta / 2
-                    highlightMoveDuration: 450
-                    boundsBehavior: Flickable.StopAtBounds
+                    height: root.altoTarjeta + 110
+
+                    property real pos: root.objetivo
+                    Behavior on pos {
+                        enabled: root.animar
+                        NumberAnimation { duration: root.duracionMovimiento; easing.type: Easing.OutCubic }
+                    }
 
                     // Entrada desde abajo
                     transform: Translate {
@@ -599,279 +649,311 @@ Scope {
                         }
                     }
 
-                    // Rueda del ratón: avanza tarjeta por tarjeta
+                    // Rueda: una tarjeta por "clic" de rueda; en touchpad suma el desplazamiento
+                    property real acumulado: 0
                     WheelHandler {
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                         onWheel: ev => {
-                            if (ev.angleDelta.y < 0 || ev.angleDelta.x < 0) lista.incrementCurrentIndex()
-                            else lista.decrementCurrentIndex()
+                            var v = Math.abs(ev.angleDelta.x) > Math.abs(ev.angleDelta.y) ? ev.angleDelta.x : ev.angleDelta.y
+                            carrusel.acumulado += v
+                            while (carrusel.acumulado <= -120) { root.mover(1); carrusel.acumulado += 120 }
+                            while (carrusel.acumulado >= 120) { root.mover(-1); carrusel.acumulado -= 120 }
                         }
                     }
 
-                    delegate: Item {
-                        id: tarjeta
-                        required property int index
-                        required property string filePath
-                        required property string fileBaseName
+                    Repeater {
+                        model: root.ranuras
+                        delegate: Item {
+                            id: tarjeta
+                            required property int index
 
-                        width: root.anchoTarjeta
-                        height: lista.height
+                            readonly property int nr: root.ranuras
+                            readonly property real m: root.margenVentana
+                            // Tarjeta lógica de esta ranura y su distancia al centro (en tarjetas)
+                            readonly property int logica: index + nr * Math.ceil((carrusel.pos - m - index) / nr)
+                            readonly property real d: logica - carrusel.pos
+                            readonly property real ad: Math.abs(d)
+                            readonly property real t: Math.min(ad, 1)          // 0 = centro, 1 = franja
+                            readonly property string filePath: root.rutaEn(root.mod(logica, root.n))
+                            readonly property bool centro: logica === root.objetivo
+                            readonly property bool sobre: zonaT.containsMouse
+                            readonly property bool esActual: filePath !== "" && filePath === root.actual
+                            // Distancia al borde de la ventana: se desvanece en el último medio paso
+                            readonly property real borde: Math.min(d + m, (nr - m) - d)
 
-                        // Distancia al centro, en tarjetas (0 = en el centro)
-                        property real dist: (x + width / 2 - lista.contentX - lista.width / 2) / (width + lista.spacing)
-                        property real ad: Math.min(Math.abs(dist), 3)
-                        property bool centro: lista.currentIndex === index
-                        property bool sobre: zonaT.containsMouse
-                        property bool esActual: filePath === root.actual
-
-                        z: 100 - ad * 10 + (sobre ? 5 : 0)
-                        opacity: 1 - 0.3 * Math.min(ad, 2.5)
-                        scale: (1 - 0.17 * Math.min(ad, 2)) * (sobre ? 1.05 : 1)
-                        Behavior on scale {
-                            enabled: !lista.moving
-                            NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
-                        }
-
-                        transform: Rotation {
-                            origin.x: tarjeta.width / 2
-                            origin.y: foto.height / 2
-                            axis { x: 0; y: 1; z: 0 }
-                            angle: Math.max(-60, Math.min(60, -tarjeta.dist * root.giro)) * (tarjeta.sobre ? 0.5 : 1)
-                            Behavior on angle {
-                                enabled: !lista.moving
-                                NumberAnimation { duration: 250 }
+                            property real ensanche: sobre && !centro ? root.ensancheFranja : 0
+                            Behavior on ensanche {
+                                NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
                             }
-                        }
+                            // Ancho: de tarjeta grande (centro) a franja; el hueco entre vecinas no cambia
+                            readonly property real cx: (d < 0 ? -1 : 1)
+                                * (t * (root.anchoTarjeta / 2 + root.hueco + root.anchoFranja / 2)
+                                   + Math.max(ad - 1, 0) * (root.anchoFranja + root.hueco))
 
-                        // ----- La foto con esquinas redondeadas y brillo -----
-                        Item {
-                            id: foto
-                            width: parent.width
-                            height: parent.width * 9 / 16
-                            anchors.top: parent.top
-                            anchors.topMargin: 16
+                            width: root.anchoTarjeta - (root.anchoTarjeta - root.anchoFranja) * t + ensanche
+                            height: carrusel.height
+                            x: carrusel.width / 2 + cx - width / 2
+                            z: 100 - ad * 5 + (sobre ? 50 : 0)
+                            opacity: Math.max(0, Math.min(1, borde / 0.5)) * (1 - 0.07 * Math.min(Math.max(ad - 1, 0), 6))
+                            visible: opacity > 0.01 && filePath !== ""
 
-                            Image {
-                                id: imgT
-                                anchors.fill: parent
-                                visible: false
-                                fillMode: Image.PreserveAspectCrop
-                                asynchronous: true
-                                sourceSize.width: 640
-                                source: root.urlDe(tarjeta.filePath)
+                            // ----- La foto (redondeada, más oscura cuanto más franja) -----
+                            Item {
+                                id: foto
+                                width: parent.width
+                                height: root.altoTarjeta * (1 - 0.06 * tarjeta.t)
+                                y: 16 + (root.altoTarjeta - height) / 2
+
+                                RectangularShadow {
+                                    anchors.fill: parent
+                                    radius: contenidoT.radio
+                                    blur: tarjeta.centro ? 36 : 18
+                                    spread: tarjeta.centro ? 2 : 0
+                                    offset.y: tarjeta.centro ? 0 : 8
+                                    color: tarjeta.centro ? root.conAlfa(c.primary, 0.55) : Qt.rgba(0, 0, 0, 0.5)
+                                }
+
+                                Item {
+                                    id: contenidoT
+                                    anchors.fill: parent
+                                    readonly property real radio: 20 - 6 * tarjeta.t
+
+                                    Image {
+                                        anchors.fill: parent
+                                        fillMode: Image.PreserveAspectCrop
+                                        asynchronous: true
+                                        sourceSize.width: 640
+                                        source: root.urlDe(tarjeta.filePath)
+                                    }
+
+                                    // Vídeo/GIF en la del centro: copia de la vista previa grande (no
+                                    // decodifica nada aparte). Recorta como PreserveAspectCrop.
+                                    ShaderEffectSource {
+                                        id: vidT
+                                        anchors.fill: parent
+                                        sourceItem: previaAnim
+                                        live: true
+                                        hideSource: false
+                                        // Textura del tamaño de la tarjeta (no de la pantalla): menos trabajo por fotograma
+                                        textureSize: Qt.size(Math.ceil(width), Math.ceil(height))
+                                        readonly property real ar: width / Math.max(1, height)
+                                        readonly property real arV: previaAnim.width / Math.max(1, previaAnim.height)
+                                        sourceRect: ar < arV
+                                            ? Qt.rect((previaAnim.width - previaAnim.height * ar) / 2, 0, previaAnim.height * ar, previaAnim.height)
+                                            : Qt.rect(0, (previaAnim.height - previaAnim.width / ar) / 2, previaAnim.width, previaAnim.width / ar)
+                                        opacity: tarjeta.centro && previaAnim.listo && previaAnim.reproduciendo === tarjeta.filePath
+                                            ? Math.max(0, 1 - 3 * tarjeta.t) : 0
+                                        visible: opacity > 0
+                                        Behavior on opacity {
+                                            NumberAnimation { duration: 250 }
+                                        }
+                                    }
+
+                                    layer.enabled: true
+                                    layer.effect: MultiEffect {
+                                        maskEnabled: true
+                                        maskSource: mascaraT
+                                        maskThresholdMin: 0.5
+                                        maskSpreadAtMin: 1.0
+                                        brightness: tarjeta.sobre && !tarjeta.centro ? -0.12 : -0.38 * tarjeta.t
+                                        saturation: -0.25 * tarjeta.t
+                                    }
+                                }
+
+                                Rectangle {
+                                    id: mascaraT
+                                    width: foto.width
+                                    height: foto.height
+                                    radius: contenidoT.radio
+                                    visible: false
+                                    layer.enabled: true
+                                }
+
+                                // Borde de color en la del centro
+                                Rectangle {
+                                    anchors.fill: parent
+                                    anchors.margins: -3
+                                    radius: contenidoT.radio + 3
+                                    color: "transparent"
+                                    border.color: c.primary
+                                    border.width: 3
+                                    opacity: tarjeta.centro ? Math.max(0, 1 - 2 * tarjeta.t) : tarjeta.sobre ? 0.5 : 0
+                                    Behavior on opacity {
+                                        NumberAnimation { duration: 200 }
+                                    }
+                                }
+
+                                // Insignias y nombre: solo en la del centro (las franjas van sin título)
+                                Item {
+                                    anchors.fill: parent
+                                    opacity: Math.max(0, 1 - 3 * tarjeta.t)
+                                    visible: opacity > 0
+
+                                    Rectangle {
+                                        visible: tarjeta.esActual
+                                        anchors.top: parent.top
+                                        anchors.right: parent.right
+                                        anchors.margins: 12
+                                        width: textoActual.width + 22
+                                        height: 26
+                                        radius: 13
+                                        color: c.primary
+                                        Text {
+                                            id: textoActual
+                                            anchors.centerIn: parent
+                                            text: "✓ Actual"
+                                            color: c.primaryText
+                                            font.pixelSize: 11
+                                            font.bold: true
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        visible: root.esAnimado(tarjeta.filePath)
+                                        anchors.top: parent.top
+                                        anchors.left: parent.left
+                                        anchors.margins: 12
+                                        width: textoTipo.width + 22
+                                        height: 26
+                                        radius: 13
+                                        color: root.conAlfa(c.surface, 0.85)
+                                        border.color: c.primary
+                                        Text {
+                                            id: textoTipo
+                                            anchors.centerIn: parent
+                                            text: /\.gif$/i.test(tarjeta.filePath) ? "▶ GIF" : "▶ Vídeo"
+                                            color: c.primary
+                                            font.pixelSize: 11
+                                            font.bold: true
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        anchors.bottom: parent.bottom
+                                        anchors.left: parent.left
+                                        anchors.margins: 12
+                                        width: Math.min(textoNombre.implicitWidth + 24, parent.width - 24)
+                                        height: 28
+                                        radius: 14
+                                        color: root.conAlfa(c.surface, 0.8)
+                                        Text {
+                                            id: textoNombre
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            x: 12
+                                            width: parent.width - 24
+                                            elide: Text.ElideRight
+                                            text: root.bonito(tarjeta.filePath.split("/").pop().replace(/\.[^.]+$/, ""))
+                                            color: c.surfaceText
+                                            font.pixelSize: 12
+                                            font.bold: true
+                                        }
+                                    }
+
+                                    // "Clic para aplicar" al pasar el cursor
+                                    Rectangle {
+                                        anchors.centerIn: parent
+                                        width: textoAplicar.width + 26
+                                        height: 30
+                                        radius: 15
+                                        color: root.conAlfa(c.surface, 0.85)
+                                        border.color: c.primary
+                                        opacity: tarjeta.sobre && tarjeta.centro && !tarjeta.esActual ? 1 : 0
+                                        scale: tarjeta.sobre ? 1 : 0.8
+                                        Behavior on opacity {
+                                            NumberAnimation { duration: 200 }
+                                        }
+                                        Behavior on scale {
+                                            NumberAnimation { duration: 250; easing.type: Easing.OutBack }
+                                        }
+                                        Text {
+                                            id: textoAplicar
+                                            anchors.centerIn: parent
+                                            text: "Clic para aplicar"
+                                            color: c.primary
+                                            font.pixelSize: 12
+                                            font.bold: true
+                                        }
+                                    }
+                                }
+
+                                // En una franja, el fondo actual se marca con un ✓ pequeño
+                                Rectangle {
+                                    visible: tarjeta.esActual
+                                    opacity: Math.max(0, 3 * tarjeta.t - 2)
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.top: parent.top
+                                    anchors.topMargin: 10
+                                    width: 22
+                                    height: 22
+                                    radius: 11
+                                    color: c.primary
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "✓"
+                                        color: c.primaryText
+                                        font.pixelSize: 12
+                                        font.bold: true
+                                    }
+                                }
+                            }
+
+                            // ----- Reflejo en el "suelo" (copia en vivo de la foto, volteada) -----
+                            Item {
+                                id: reflejo
+                                anchors.top: foto.bottom
+                                anchors.topMargin: 8
+                                width: foto.width
+                                height: 70
+                                clip: true
+                                opacity: tarjeta.centro ? 0.35 : 0.2
+
+                                ShaderEffectSource {
+                                    width: foto.width
+                                    height: foto.height
+                                    sourceItem: contenidoT
+                                    live: true
+                                    hideSource: false
+                                    // Media resolución: el reflejo es tenue y borroso
+                                    textureSize: Qt.size(Math.ceil(foto.width / 2), Math.ceil(foto.height / 2))
+                                    smooth: true
+                                    transform: Scale { yScale: -1; origin.y: foto.height / 2 }
+                                }
+
+                                layer.enabled: true
+                                layer.effect: MultiEffect {
+                                    maskEnabled: true
+                                    maskSource: mascaraReflejo
+                                }
                             }
 
                             Rectangle {
-                                id: mascaraT
-                                anchors.fill: parent
-                                radius: 20
+                                id: mascaraReflejo
+                                width: reflejo.width
+                                height: reflejo.height
                                 visible: false
                                 layer.enabled: true
-                            }
-
-                            MultiEffect {
-                                anchors.fill: parent
-                                source: imgT
-                                maskEnabled: true
-                                maskSource: mascaraT
-                                maskThresholdMin: 0.5
-                                maskSpreadAtMin: 1.0
-                                brightness: tarjeta.centro || tarjeta.sobre ? 0 : -0.25
-                                Behavior on brightness {
-                                    NumberAnimation { duration: 300 }
-                                }
-                                shadowEnabled: true
-                                shadowColor: tarjeta.centro ? c.primary : "black"
-                                shadowBlur: 1.0
-                                shadowOpacity: tarjeta.centro ? 0.9 : 0.6
-                                shadowVerticalOffset: tarjeta.centro ? 0 : 10
-                            }
-
-                            // Borde de color en la del centro
-                            Rectangle {
-                                anchors.fill: parent
-                                anchors.margins: -3
-                                radius: 23
-                                color: "transparent"
-                                border.color: c.primary
-                                border.width: 3
-                                opacity: tarjeta.centro ? 1 : tarjeta.sobre ? 0.5 : 0
-                                Behavior on opacity {
-                                    NumberAnimation { duration: 250 }
+                                gradient: Gradient {
+                                    GradientStop { position: 0.0; color: "white" }
+                                    GradientStop { position: 1.0; color: "transparent" }
                                 }
                             }
 
-                            // Reflejo de vidrio que cruza al pasar el ratón
-                            Item {
-                                anchors.fill: parent
-                                clip: true
-                                Rectangle {
-                                    width: parent.width * 0.35
-                                    height: parent.height * 2.2
-                                    y: -parent.height * 0.6
-                                    rotation: 25
-                                    x: tarjeta.sobre ? parent.width * 1.2 : -parent.width * 0.6
-                                    Behavior on x {
-                                        NumberAnimation { duration: 700; easing.type: Easing.OutCubic }
-                                    }
-                                    gradient: Gradient {
-                                        orientation: Gradient.Horizontal
-                                        GradientStop { position: 0.0; color: "transparent" }
-                                        GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, 0.22) }
-                                        GradientStop { position: 1.0; color: "transparent" }
-                                    }
-                                }
-                            }
-
-                            // Insignia "Actual"
-                            Rectangle {
-                                visible: tarjeta.esActual
-                                anchors.top: parent.top
-                                anchors.right: parent.right
-                                anchors.margins: 12
-                                width: textoActual.width + 22
-                                height: 26
-                                radius: 13
-                                color: c.primary
-                                Text {
-                                    id: textoActual
-                                    anchors.centerIn: parent
-                                    text: "✓ Actual"
-                                    color: c.primaryText
-                                    font.pixelSize: 11
-                                    font.bold: true
-                                }
-                            }
-
-                            // Insignia "Vídeo" / "GIF"
-                            Rectangle {
-                                visible: root.esAnimado(tarjeta.filePath)
-                                anchors.top: parent.top
-                                anchors.left: parent.left
-                                anchors.margins: 12
-                                width: textoTipo.width + 22
-                                height: 26
-                                radius: 13
-                                color: root.conAlfa(c.surface, 0.85)
-                                border.color: c.primary
-                                Text {
-                                    id: textoTipo
-                                    anchors.centerIn: parent
-                                    text: /\.gif$/i.test(tarjeta.filePath) ? "▶ GIF" : "▶ Vídeo"
-                                    color: c.primary
-                                    font.pixelSize: 11
-                                    font.bold: true
-                                }
-                            }
-
-                            // Nombre de esta tarjeta
-                            Rectangle {
-                                anchors.bottom: parent.bottom
-                                anchors.left: parent.left
-                                anchors.margins: 12
-                                width: Math.min(textoNombre.implicitWidth + 24, parent.width - 24)
-                                height: 28
-                                radius: 14
-                                color: root.conAlfa(c.surface, 0.8)
-                                Text {
-                                    id: textoNombre
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    x: 12
-                                    width: parent.width - 24
-                                    elide: Text.ElideRight
-                                    text: root.bonito(tarjeta.fileBaseName)
-                                    color: c.surfaceText
-                                    font.pixelSize: 12
-                                    font.bold: tarjeta.centro
-                                }
-                            }
-
-                            // Aviso al pasar el cursor: "Clic para elegir" / "Clic para aplicar"
-                            Rectangle {
-                                anchors.centerIn: parent
-                                width: textoAplicar.width + 26
-                                height: 30
-                                radius: 15
-                                color: root.conAlfa(c.surface, 0.85)
-                                border.color: c.primary
-                                opacity: tarjeta.sobre && !(tarjeta.centro && tarjeta.esActual) ? 1 : 0
-                                scale: tarjeta.sobre ? 1 : 0.8
-                                Behavior on opacity {
-                                    NumberAnimation { duration: 200 }
-                                }
-                                Behavior on scale {
-                                    NumberAnimation { duration: 250; easing.type: Easing.OutBack }
-                                }
-                                Text {
-                                    id: textoAplicar
-                                    anchors.centerIn: parent
-                                    text: tarjeta.centro ? "Clic para aplicar" : "Clic para elegir"
-                                    color: c.primary
-                                    font.pixelSize: 12
-                                    font.bold: true
-                                }
-                            }
-                        }
-
-                        // ----- Reflejo en el "suelo" -----
-                        Item {
-                            id: reflejo
-                            anchors.top: foto.bottom
-                            anchors.topMargin: 8
-                            width: foto.width
-                            height: 80
-                            clip: true
-                            opacity: tarjeta.centro ? 0.4 : 0.25
-
-                            // La foto volteada: se ve su parte de abajo, como en un espejo
-                            Image {
+                            MouseArea {
+                                id: zonaT
+                                x: 0
+                                y: foto.y
                                 width: foto.width
                                 height: foto.height
-                                fillMode: Image.PreserveAspectCrop
-                                asynchronous: true
-                                sourceSize.width: 320
-                                source: root.urlDe(tarjeta.filePath)
-                                transform: Scale { yScale: -1; origin.y: foto.height / 2 }
-                            }
-
-                            // Se desvanece hacia abajo
-                            layer.enabled: true
-                            layer.effect: MultiEffect {
-                                maskEnabled: true
-                                maskSource: mascaraReflejo
-                                blurEnabled: true
-                                blur: 0.3
-                            }
-                        }
-
-                        Rectangle {
-                            id: mascaraReflejo
-                            width: reflejo.width
-                            height: reflejo.height
-                            radius: 20
-                            visible: false
-                            layer.enabled: true
-                            gradient: Gradient {
-                                GradientStop { position: 0.0; color: "white" }
-                                GradientStop { position: 1.0; color: "transparent" }
-                            }
-                        }
-
-                        MouseArea {
-                            id: zonaT
-                            x: 0
-                            y: foto.y
-                            width: foto.width
-                            height: foto.height
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: mouse => {
-                                if (!tarjeta.centro) {
-                                    lista.currentIndex = tarjeta.index   // primero se elige
-                                    return
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: mouse => {
+                                    if (!tarjeta.centro) {
+                                        root.objetivo = tarjeta.logica        // primero se elige
+                                        return
+                                    }
+                                    var p = zonaT.mapToItem(escena, mouse.x, mouse.y)
+                                    root.aplicar(tarjeta.filePath, p.x, p.y)
                                 }
-                                var p = zonaT.mapToItem(escena, mouse.x, mouse.y)
-                                root.aplicar(tarjeta.filePath, p.x, p.y)
                             }
                         }
                     }
@@ -1039,8 +1121,8 @@ Scope {
             Item {
                 id: teclado
                 focus: true
-                Keys.onLeftPressed: lista.decrementCurrentIndex()
-                Keys.onRightPressed: lista.incrementCurrentIndex()
+                Keys.onLeftPressed: root.mover(-1)
+                Keys.onRightPressed: root.mover(1)
                 Keys.onReturnPressed: root.aplicarCentro()
                 Keys.onEnterPressed: root.aplicarCentro()
                 Keys.onEscapePressed: root.cerrar()

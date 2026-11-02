@@ -1,6 +1,8 @@
 {
-  "duracion": 800,
-  "pausarTapado": true,
-  "transicion": "ola",
-  "pausarConBateria": false
+    "duracion": 800,
+    "fpsVideo": 30,
+    "optimizarVideo": true,
+    "pausarConBateria": false,
+    "pausarTapado": true,
+    "transicion": "barrido"
 }

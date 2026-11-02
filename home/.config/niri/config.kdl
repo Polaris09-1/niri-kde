@@ -659,7 +659,8 @@ window-rule {
 // Dock flotante (diseño A). La barra estilo Windows se retiró el 2026-10-31:
 // está en ~/respaldos-limpieza/barra
 spawn-at-startup "quickshell" "-c" "dock"
-spawn-at-startup "quickshell" "-c" "galeria"
+// galeria: con VA-API (vista previa de vídeo decodificada en la Radeon, ver fondo-arrancar.sh)
+spawn-at-startup "@HOME@/.local/bin/fondo-arrancar.sh" "galeria"
 spawn-at-startup "quickshell" "-c" "cajon"
 
 // Historial del portapapeles: cliphist guarda texto e imágenes; Mod+V lo muestra

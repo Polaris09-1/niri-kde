@@ -33,7 +33,7 @@ arranca niri:
 | `cajon` | Cajón de aplicaciones con buscador. |
 | `portapapeles` | Historial del portapapeles (texto e imágenes) estilo Win+V, que pega en la ventana anterior. |
 | `escritorio` | Iconos de `~/Desktop` con menú de clic derecho. |
-| `galeria` | Galería de fondos (imágenes, vídeos y GIF) con vista previa de la paleta antes de aplicar. |
+| `galeria` | Galería de fondos (imágenes, vídeos y GIF): carrusel infinito con la tarjeta elegida grande y las demás como franjas verticales; el vídeo o GIF elegido se reproduce en la tarjeta y a pantalla completa antes de aplicarlo (decodificado en la GPU), con vista previa de la paleta. |
 | `fondo` | Fondo de pantalla con transiciones por shader (círculo desde el clic, ola, barrido, fundido) y vídeo, que se pausa con ventanas maximizadas. |
 | `osd` | Aviso discreto de volumen, micrófono, brillo y Bloq Mayús. |
 | `bloqueo` | Pantalla de bloqueo (PAM) con música, avisos sin ver, batería y botones de energía; bloqueo automático por inactividad. |

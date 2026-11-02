@@ -48,6 +48,12 @@ grep -rlI --null -F "$HOME" "$DEST" | xargs -0 -r sed -i "s#$HOME#@HOME@#g"
 reloj="$DEST/.config/quickshell/reloj/shell.qml"
 [ -f "$reloj" ] && sed -i -E 's/(property string nombre: )"[^"]*"/\1"@NOMBRE@"/' "$reloj"
 
+# Luz nocturna: no subir la ubicación (lat/lon). En el repo queda 0,0; quien instale pone la suya
+# en LuzNocturna.qml o en hola/luz-nocturna.json (se crea solo al arrancar)
+rm -f "$DEST/.config/quickshell/hola/luz-nocturna.json"
+luzq="$DEST/.config/quickshell/hola/LuzNocturna.qml"
+[ -f "$luzq" ] && sed -i -E 's/(property real (lat|lon): )-?[0-9.]+/\10.0/' "$luzq"
+
 echo "== Tema SDDM"
 mkdir -p "$REPO/sddm"
 T=/usr/share/sddm/themes/sddm-astronaut-theme

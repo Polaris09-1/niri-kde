@@ -108,11 +108,16 @@ Scope {
 
     function tiempoBateria() {
         if (!root.bat) return ""
+        // Con el límite de carga, al llegar al tope queda enchufada sin cargar
+        if (limite.activo && (root.bat.state === UPowerDeviceState.PendingCharge
+                || root.bat.state === UPowerDeviceState.FullyCharged))
+            return "Enchufada · tope " + limite.fin + " %"
         var s = root.cargando ? root.bat.timeToFull : root.bat.timeToEmpty
         if (!s || s <= 0) return root.cargando ? "Cargando" : "En batería"
         var h = Math.floor(s / 3600)
         var m = Math.floor((s % 3600) / 60)
         var t = h + "h " + (m < 10 ? "0" : "") + m + "m"
+        if (root.cargando && limite.activo) return "Cargando hasta el " + limite.fin + " %"
         return root.cargando ? t + " para llenarse" : t + " restantes"
     }
 
@@ -213,7 +218,22 @@ Scope {
 
     // Páginas del panel de estado: inicio | wifi | bluetooth | audio | sistema | energia
     property string pagina: "inicio"
-    readonly property var paginas: ["inicio", "wifi", "bluetooth", "audio", "sistema", "energia", "capturas"]
+    readonly property var paginas: ["inicio", "wifi", "bluetooth", "audio", "sistema", "energia", "capturas", "nocturna"]
+
+    // ===== Energía: luz nocturna (wlsunset), límite de carga (UPower) y modos (power-profiles-daemon) =====
+    LuzNocturna { id: luz }
+    LimiteCarga { id: limite }
+    function textoPerfil() {
+        return PowerProfiles.profile === PowerProfile.PowerSaver ? "ahorro"
+            : PowerProfiles.profile === PowerProfile.Performance ? "rendimiento" : "equilibrado"
+    }
+    function ponerPerfil(nombre) {
+        var p = { ahorro: PowerProfile.PowerSaver, equilibrado: PowerProfile.Balanced, rendimiento: PowerProfile.Performance }[nombre]
+        if (p === undefined) return false
+        if (p === PowerProfile.Performance && !PowerProfiles.hasPerformanceProfile) return false
+        PowerProfiles.profile = p
+        return true
+    }
 
     // ===== Capturas y grabación =====
     Grabadora { id: grabadora }
@@ -533,6 +553,26 @@ Scope {
                 jugador: root.jugador ? (root.jugador.trackTitle || "?") : "",
                 btAgente: agenteBt.registrado, btSolicitud: agenteBt.solicitud, btOperacion: agenteBt.operacion,
                 btAviso: agenteBt.aviso })
+        }
+        // ----- Energía -----
+        // Luz nocturna: si | no | alternar | sol | siempre | apagada | info
+        function luzNocturna(v: string): string {
+            if (v === "si") luz.ponerModo(luz.ultimoModo || "sol")
+            else if (v === "no") luz.ponerModo("apagada")
+            else if (v === "alternar") luz.alternar()
+            else if (v !== "info" && v !== "") luz.ponerModo(v)
+            return JSON.stringify(luz.info())
+        }
+        function temperaturaNocturna(k: int): string { luz.ponerTemperatura(k); return String(luz.temperatura) }
+        // Límite de carga: si | no | info
+        function bateriaLimite(v: string): string {
+            if (v === "si" || v === "no") limite.poner(v === "si")
+            return JSON.stringify(limite.info())
+        }
+        // Modo de energía: ahorro | equilibrado | rendimiento | info
+        function perfilEnergia(v: string): string {
+            if (v !== "info" && v !== "" && !root.ponerPerfil(v)) return "no disponible: " + v
+            return root.textoPerfil()
         }
         // Mismas funciones que llaman los clics, para probarlas sin mouse
         function probar(accion: string, valor: real): string {
@@ -1084,6 +1124,7 @@ Scope {
                     : root.pagina === "sistema" ? pagSistema.implicitHeight
                     : root.pagina === "energia" ? pagEnergia.implicitHeight
                     : root.pagina === "capturas" ? pagCapturas.implicitHeight
+                    : root.pagina === "nocturna" ? pagNocturna.implicitHeight
                     : colEstado.implicitHeight)
                 Behavior on altoFinal {
                     enabled: panelEstado.p > 0.98
@@ -1224,6 +1265,158 @@ Scope {
                         }
                         // Hueco del ancho del botón › para alinear con el volumen
                         Item { width: btnAudio.width; height: 1 }
+                    }
+
+                    // Modos de energía (power-profiles-daemon): Ahorro · Equilibrado · Rendimiento
+                    Row {
+                        width: parent.width
+                        spacing: 6
+                        Repeater {
+                            model: [
+                                { id: "ahorro", icono: 0xF032A, texto: "Ahorro" },
+                                { id: "equilibrado", icono: 0xF05D1, texto: "Equilibrado" },
+                                { id: "rendimiento", icono: 0xF04C5, texto: "Rendimiento" }
+                            ]
+                            delegate: Rectangle {
+                                id: perfil
+                                required property var modelData
+                                readonly property bool elegido: root.textoPerfil() === perfil.modelData.id
+                                readonly property bool disponible: perfil.modelData.id !== "rendimiento" || PowerProfiles.hasPerformanceProfile
+                                width: (colEstado.width - 12) / 3
+                                height: 34
+                                radius: 17
+                                color: perfil.elegido ? tema.primary : root.alfa(tema.primary, maPerfil.containsMouse ? 0.18 : 0.08)
+                                opacity: perfil.disponible ? 1 : 0.4
+                                scale: maPerfil.pressed ? 0.95 : 1
+                                Behavior on color {
+                                    ColorAnimation { duration: 150 }
+                                }
+                                Behavior on scale {
+                                    NumberAnimation { duration: 120; easing.type: Easing.OutBack }
+                                }
+                                Row {
+                                    anchors.centerIn: parent
+                                    spacing: 5
+                                    Text {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: root.ic(perfil.modelData.icono)
+                                        font.family: root.fuente
+                                        font.pixelSize: 14
+                                        color: perfil.elegido ? tema.primaryText : tema.primary
+                                    }
+                                    Text {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: perfil.modelData.texto
+                                        font.family: root.fuente
+                                        font.pixelSize: 11
+                                        font.bold: perfil.elegido
+                                        color: perfil.elegido ? tema.primaryText : tema.surfaceText
+                                    }
+                                }
+                                MouseArea {
+                                    id: maPerfil
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: perfil.disponible ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: root.ponerPerfil(perfil.modelData.id)
+                                }
+                            }
+                        }
+                    }
+
+                    // Luz nocturna y límite de carga: el círculo enciende/apaga; el resto abre su página
+                    Row {
+                        width: parent.width
+                        spacing: 10
+                        Repeater {
+                            model: ["nocturna", "bateria"]
+                            delegate: Rectangle {
+                                id: rapida
+                                required property var modelData
+                                readonly property bool esLuz: rapida.modelData === "nocturna"
+                                readonly property bool activo: rapida.esLuz ? luz.activa : limite.activo
+                                readonly property string titulo: rapida.esLuz ? "Luz nocturna" : "Límite " + limite.fin + " %"
+                                readonly property string detalle: rapida.esLuz
+                                    ? (!luz.activa ? "Apagada"
+                                        : luz.modo === "siempre" ? "Siempre · " + luz.temperatura + " K"
+                                        : luz.calida ? "Activa · " + luz.tempActual + " K"
+                                        : luz.atardecer !== "" ? "Desde las " + luz.atardecer : "Al atardecer")
+                                    : (limite.activo ? "Cuida la batería" : "Carga al 100 %")
+                                visible: rapida.esLuz || limite.soportado
+                                width: (colEstado.width - 10) / 2
+                                height: 56
+                                radius: 16
+                                color: rapida.activo ? root.alfa(tema.primary, maRapida.containsMouse ? 0.3 : 0.2)
+                                    : root.alfa(tema.primary, maRapida.containsMouse ? 0.16 : 0.07)
+                                Behavior on color {
+                                    ColorAnimation { duration: 150 }
+                                }
+                                MouseArea {
+                                    id: maRapida
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.pagina = rapida.esLuz ? "nocturna" : "energia"
+                                }
+                                // Círculo: interruptor rápido
+                                Rectangle {
+                                    id: circulo
+                                    x: 10
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 34
+                                    height: 34
+                                    radius: 17
+                                    color: rapida.activo ? tema.primary : root.alfa(tema.primary, maCirculo.containsMouse ? 0.25 : 0.12)
+                                    scale: maCirculo.pressed ? 0.9 : 1
+                                    opacity: !rapida.esLuz && limite.ocupado ? 0.6 : 1
+                                    Behavior on color {
+                                        ColorAnimation { duration: 150 }
+                                    }
+                                    Behavior on scale {
+                                        NumberAnimation { duration: 120; easing.type: Easing.OutBack }
+                                    }
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: root.ic(rapida.esLuz ? 0xF0594 : 0xF008A)
+                                        font.family: root.fuente
+                                        font.pixelSize: 17
+                                        color: rapida.activo ? tema.primaryText : tema.primary
+                                    }
+                                    MouseArea {
+                                        id: maCirculo
+                                        anchors.fill: parent
+                                        anchors.margins: -4
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: rapida.esLuz ? luz.alternar() : limite.poner(!limite.activo)
+                                    }
+                                }
+                                Column {
+                                    anchors.left: circulo.right
+                                    anchors.leftMargin: 9
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 8
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    Text {
+                                        width: parent.width
+                                        elide: Text.ElideRight
+                                        text: rapida.titulo
+                                        font.family: root.fuente
+                                        font.pixelSize: 12
+                                        font.bold: true
+                                        color: tema.surfaceText
+                                    }
+                                    Text {
+                                        width: parent.width
+                                        elide: Text.ElideRight
+                                        text: rapida.detalle
+                                        font.family: root.fuente
+                                        font.pixelSize: 10
+                                        color: root.alfa(tema.surfaceText, 0.65)
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     // Wi-Fi y Bluetooth (cada tarjeta abre su página)
@@ -1449,6 +1642,7 @@ Scope {
                     id: pagEnergia
                     s: root
                     tema: tema
+                    limite: limite
                     activa: root.panel === "estado" && root.pagina === "energia"
                     x: 18 + (root.pagina === "energia" ? 0 : 40)
                     y: 18
@@ -1471,6 +1665,21 @@ Scope {
                     y: 18
                     width: parent.width - 36
                     opacity: root.pagina === "capturas" ? 1 : 0
+                    visible: opacity > 0.01
+                    Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                    Behavior on opacity { NumberAnimation { duration: 120 } }
+                    onAtras: root.pagina = "inicio"
+                }
+                PaginaNocturna {
+                    id: pagNocturna
+                    s: root
+                    tema: tema
+                    luz: luz
+                    activa: root.panel === "estado" && root.pagina === "nocturna"
+                    x: 18 + (root.pagina === "nocturna" ? 0 : 40)
+                    y: 18
+                    width: parent.width - 36
+                    opacity: root.pagina === "nocturna" ? 1 : 0
                     visible: opacity > 0.01
                     Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
                     Behavior on opacity { NumberAnimation { duration: 120 } }

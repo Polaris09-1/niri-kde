@@ -9,6 +9,7 @@ Item {
 
     property var s
     property var tema
+    property var limite          // LimiteCarga.qml (límite de carga de la batería)
     property bool activa: false
     signal atras()
     signal hecho()        // para cerrar el panel tras una acción
@@ -137,6 +138,102 @@ Item {
                         cursorShape: Qt.PointingHandCursor
                         onClicked: if (e.pendiente === "") e.pedir(t.modelData.id)
                     }
+                }
+            }
+        }
+
+        // Batería: límite de carga (UPower) y salud
+        Etiqueta {
+            visible: !!(e.limite && e.limite.soportado)
+            s: e.s
+            tema: e.tema
+            texto: "BATERÍA"
+        }
+        Rectangle {
+            visible: !!(e.limite && e.limite.soportado)
+            width: parent.width
+            height: colLim.implicitHeight + 24
+            radius: 16
+            color: e.s.alfa(e.tema.primary, e.limite && e.limite.activo ? 0.16 : 0.07)
+            Behavior on color {
+                ColorAnimation { duration: 150 }
+            }
+            Column {
+                id: colLim
+                x: 14
+                y: 12
+                width: parent.width - 28
+                spacing: 8
+                Item {
+                    width: parent.width
+                    height: 34
+                    Text {
+                        id: icLim
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: e.s.ic(0xF008A)
+                        font.family: e.s.fuente
+                        font.pixelSize: 22
+                        color: e.tema.primary
+                    }
+                    Column {
+                        anchors.left: icLim.right
+                        anchors.leftMargin: 10
+                        anchors.right: swLim.left
+                        anchors.rightMargin: 8
+                        anchors.verticalCenter: parent.verticalCenter
+                        Text {
+                            width: parent.width
+                            elide: Text.ElideRight
+                            text: "Cargar solo hasta el " + (e.limite ? e.limite.fin : 80) + " %"
+                            font.family: e.s.fuente
+                            font.pixelSize: 12
+                            font.bold: true
+                            color: e.tema.surfaceText
+                        }
+                        Text {
+                            width: parent.width
+                            elide: Text.ElideRight
+                            text: e.limite && e.limite.activo
+                                ? "Vuelve a cargar al bajar del " + e.limite.inicio + " %"
+                                : "Carga completa hasta el 100 %"
+                            font.family: e.s.fuente
+                            font.pixelSize: 10
+                            color: e.s.alfa(e.tema.surfaceText, 0.65)
+                        }
+                    }
+                    Interruptor {
+                        id: swLim
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        tema: e.tema
+                        activo: e.limite ? e.limite.activo : false
+                        ocupado: e.limite ? e.limite.ocupado : false
+                        onCambiado: v => e.limite.poner(v)
+                    }
+                }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: "Alarga la vida de la batería si pasas mucho tiempo enchufado. Apágalo antes de un viaje para cargarla al 100 %."
+                    font.family: e.s.fuente
+                    font.pixelSize: 10
+                    color: e.s.alfa(e.tema.surfaceText, 0.55)
+                }
+                Text {
+                    visible: !!(e.limite && e.limite.salud >= 0)
+                    text: "Salud de la batería: " + (e.limite ? e.limite.salud : 0) + " % de su capacidad original"
+                    font.family: e.s.fuente
+                    font.pixelSize: 10
+                    color: e.s.alfa(e.tema.surfaceText, 0.75)
+                }
+                Text {
+                    visible: !!(e.limite && e.limite.error !== "")
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: e.limite ? "No se pudo cambiar: " + e.limite.error : ""
+                    font.family: e.s.fuente
+                    font.pixelSize: 10
+                    color: "#ff8a80"
                 }
             }
         }

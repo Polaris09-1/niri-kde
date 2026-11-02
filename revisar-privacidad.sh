@@ -43,6 +43,8 @@ if command -v nmcli >/dev/null; then
         buscarLiteral "Nombre de una red guardada" "$red"
     done < <(nmcli -t -f NAME connection show 2>/dev/null | grep -vE '^(lo|Wired connection [0-9]+)$')
 fi
+# Ubicación de la luz nocturna (debe quedar en 0,0 en el repo)
+buscar "Coordenadas de la luz nocturna" 'property real (lat|lon): -?([1-9][0-9]*\.[0-9]*|0\.[0-9]*[1-9])' grave
 # Nombre del equipo
 buscarLiteral "Nombre del equipo" "$(cat /etc/hostname 2>/dev/null)"
 

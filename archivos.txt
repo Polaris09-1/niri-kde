@@ -12,6 +12,9 @@
 .config/qt5ct/qt5ct.conf
 .config/qt6ct/qt6ct.conf
 .config/environment.d/qt-tema.conf
+.config/starship.toml
+.config/fastfetch/config.jsonc
+.config/bash/escritorio.sh
 .local/bin/wallpaper.sh
 .local/bin/fondo-fotograma.sh
 .local/bin/aplicar-colores-apps.sh

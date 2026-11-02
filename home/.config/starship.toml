@@ -1,0 +1,81 @@
+# Prompt de starship con los colores del fondo (lo genera matugen; no lo edites en ~/.config/starship.toml,
+# edita ~/.config/matugen/templates/starship.toml). Píldoras redondeadas como las islas de la barra.
+# Los bordes van como escapes (\ue0b6 izquierdo, \ue0b4 derecho): copiados a mano se pierden.
+# Cada píldora va en un grupo ( … ): si el módulo no tiene nada que mostrar, la píldora no sale.
+"$schema" = "https://starship.rs/config-schema.json"
+add_newline = true
+palette = "matugen"
+
+format = """\
+[\ue0b6](fg:primary)$os$username$hostname[\ue0b4](fg:primary) \
+[\ue0b6](fg:superficie)$directory[\ue0b4](fg:superficie)\
+( [\ue0b6](fg:tertiary_container)$git_branch$git_state$git_status[\ue0b4](fg:tertiary_container))\
+( [\ue0b6](fg:secondary_container)$cmd_duration$jobs[\ue0b4](fg:secondary_container)) \
+$character"""
+
+[palettes.matugen]
+primary = "#8acff2"
+on_primary = "#003547"
+superficie = "#323537"
+on_surface = "#e0e3e5"
+secondary_container = "#344c59"
+on_secondary_container = "#cee8f7"
+tertiary_container = "#925b21"
+on_tertiary_container = "#ffffff"
+error = "#ffb4ab"
+
+[os]
+disabled = false
+format = "[$symbol](bg:primary fg:on_primary)"
+
+[os.symbols]
+Arch = "󰣇"
+Linux = "\uf17c"
+
+# Usuario y equipo: solo por SSH o como root
+[username]
+format = "[ $user](bg:primary fg:on_primary bold)"
+[hostname]
+format = "[@$hostname](bg:primary fg:on_primary)"
+
+[directory]
+format = "[ $path](bg:superficie fg:primary bold)[$read_only](bg:superficie fg:error)[ ](bg:superficie)"
+truncation_length = 3
+truncation_symbol = "…/"
+truncate_to_repo = false
+home_symbol = "~"
+read_only = " 󰌾"
+
+[git_branch]
+format = "[ $symbol$branch ](bg:tertiary_container fg:on_tertiary_container)"
+symbol = "\ue0a0 "
+
+[git_state]
+format = "[$state( $progress_current/$progress_total) ](bg:tertiary_container fg:on_tertiary_container bold)"
+
+[git_status]
+format = "([$all_status$ahead_behind ](bg:tertiary_container fg:on_tertiary_container))"
+modified = "!"
+staged = "+"
+untracked = "?"
+deleted = "✘"
+renamed = "»"
+conflicted = "="
+ahead = "⇡${count}"
+behind = "⇣${count}"
+diverged = "⇕⇡${ahead_count}⇣${behind_count}"
+stashed = ""
+
+# Solo si el comando tardó más de 2 s
+[cmd_duration]
+min_time = 2000
+format = "[ 󰔟 $duration ](bg:secondary_container fg:on_secondary_container)"
+
+[jobs]
+format = "[ $symbol$number ](bg:secondary_container fg:on_secondary_container)"
+symbol = "\uf013 "
+
+# ❯ del color del fondo; roja si el último comando falló
+[character]
+success_symbol = "[❯](bold fg:primary)"
+error_symbol = "[❯](bold fg:error)"

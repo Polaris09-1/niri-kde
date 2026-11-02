@@ -2,6 +2,11 @@
 import = ["~/.config/alacritty/colors.toml"]
 live_config_reload = true
 
+# Nerd Font: iconos y bordes redondeados del prompt (starship) y de fastfetch
+[font]
+normal = { family = "JetBrainsMono Nerd Font", style = "Regular" }
+size = 11
+
 [window]
 opacity = 0.85
 padding = { x = 12, y = 10 }

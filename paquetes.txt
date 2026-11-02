@@ -14,6 +14,6 @@ ffmpeg imagemagick jq curl git glib2 libqalculate
 # Apariencia: apps GTK/Qt con los colores de matugen, iconos y fuente
 adw-gtk-theme qt6ct qt5ct papirus-icon-theme ttf-jetbrains-mono-nerd
 # Extras
-cava fastfetch
+cava fastfetch starship
 # Pantalla de inicio de sesión
 sddm

@@ -55,3 +55,12 @@ output_path = "~/.config/qt6ct/colors/matugen.conf"
 [templates.kde]
 input_path = "~/.config/matugen/templates/kde-colores.colors"
 output_path = "~/.local/share/color-schemes/Matugen.colors"
+
+# Terminal (2026-11-01): prompt de starship y fastfetch con los colores del fondo
+[templates.starship]
+input_path = "~/.config/matugen/templates/starship.toml"
+output_path = "~/.config/starship.toml"
+
+[templates.fastfetch]
+input_path = "~/.config/matugen/templates/fastfetch.jsonc"
+output_path = "~/.config/fastfetch/config.jsonc"

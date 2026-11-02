@@ -121,6 +121,13 @@ if confirmar "   ¿Copiar los archivos (con respaldo de los que ya existan)?"; t
     echo "   Instalados/actualizados: $nuevos · ya iguales: $iguales · respaldados antes de sobrescribir: $respaldados"
     [ "$respaldados" -gt 0 ] && echo "   Respaldo en: $RESPALDO"
     hacer mkdir -p "$HOME/Pictures/wallpapers" "$HOME/Pictures/Screenshots"
+    # Prompt (starship) y fastfetch: una línea en ~/.bashrc (solo si no está)
+    if ! grep -qs 'config/bash/escritorio.sh' "$HOME/.bashrc"; then
+        if [ "$SIMULAR" = si ]; then echo "   [simular] añadir a ~/.bashrc: . ~/.config/bash/escritorio.sh"
+        else printf '\n# Prompt (starship) y fastfetch del escritorio niri-kde\n[ -f ~/.config/bash/escritorio.sh ] && . ~/.config/bash/escritorio.sh\n' >> "$HOME/.bashrc"
+            echo "   Añadida a ~/.bashrc la línea del prompt y fastfetch."
+        fi
+    fi
 else
     aviso "   Archivos omitidos."
 fi

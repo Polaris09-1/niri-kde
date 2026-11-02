@@ -360,12 +360,13 @@ Scope {
     // dentro; al salir de esa zona (o al cerrarse el panel) la gracia se acaba y cierra como siempre.
     property bool enGracia: false
     property rect zonaGracia: Qt.rect(0, 0, 0, 0)
-    readonly property bool cursorEnGracia: root.enGracia && cursorCapa.hovered
+    readonly property bool cursorEnZona: cursorCapa.hovered
         && cursorCapa.point.position.x >= root.zonaGracia.x
         && cursorCapa.point.position.x <= root.zonaGracia.x + root.zonaGracia.width
         && cursorCapa.point.position.y >= root.zonaGracia.y
         && cursorCapa.point.position.y <= root.zonaGracia.y + root.zonaGracia.height
-    onCursorEnGraciaChanged: if (!root.cursorEnGracia) root.enGracia = false
+    readonly property bool cursorEnGracia: root.enGracia && root.cursorEnZona
+    onCursorEnZonaChanged: if (!root.cursorEnZona) root.enGracia = false
     onPaginaChanged: {
         if (root.panel !== "estado") return
         // altoFinal tiene Behavior: aquí todavía vale el alto de la página anterior

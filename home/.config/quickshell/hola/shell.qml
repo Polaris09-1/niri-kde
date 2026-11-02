@@ -675,10 +675,15 @@ Scope {
         // Pantalla completa escondida: solo el sensor fino del borde de arriba.
         // Pantalla completa bajada: toda la franja (pasar de una isla a otra no la esconde).
         mask: root.pantallaCompleta ? (root.barraRevelada ? regionFranja : regionSensor) : regionIslas
+        // Coordenadas explícitas, NO `Region { item: … }`: con `item` Quickshell mide la isla con sus
+        // transformaciones (Translate de entrada y de pantalla completa) y solo vuelve a medir cuando
+        // cambian su x/y/ancho/alto, no cuando termina la animación. Al salir de pantalla completa la
+        // medía aún escondida arriba (fuera de la ventana) y la barra se quedaba sin recibir el cursor.
+        // Así la máscara está siempre en la posición final de las islas, también durante la bajada.
         property Region regionIslas: Region {
-            Region { item: islaIzq }
-            Region { item: islaReloj }
-            Region { item: islaDer }
+            Region { x: islaIzq.x; y: islaIzq.y; width: islaIzq.width; height: islaIzq.height }
+            Region { x: islaReloj.x; y: islaReloj.y; width: islaReloj.width; height: islaReloj.height }
+            Region { x: islaDer.x; y: islaDer.y; width: islaDer.width; height: islaDer.height }
         }
         property Region regionSensor: Region { x: 0; y: 0; width: ventana.width; height: root.altoSensor }
         property Region regionFranja: Region { x: 0; y: 0; width: ventana.width; height: ventana.height }

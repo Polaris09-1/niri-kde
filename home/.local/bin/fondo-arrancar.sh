@@ -3,7 +3,7 @@
 # en la Radeon. Si la Radeon no es el primer nodo de render (aquí renderD128 = NVIDIA/nouveau),
 # carga redirigir-render.so para que FFmpeg abra la Radeon en su lugar.
 # Uso: fondo-arrancar.sh [módulo]   (lo llama niri al iniciar sesión; módulo = fondo por defecto)
-#      fondo-arrancar.sh galeria   → la galería, para su vista previa de vídeo
+#      fondo-arrancar.sh galeria   → la galería, para su vista previa de vídeo (la lanza galeria-abrir.sh)
 #      pkill -f -- '-c fondo$'; setsid ~/.local/bin/fondo-arrancar.sh &   (reiniciarlo a mano)
 SO="$HOME/.local/lib/fondo/redirigir-render.so"
 primero="" ; amd=""
@@ -21,4 +21,6 @@ if [ -n "$amd" ] && [ "$amd" != "$primero" ] && [ -f "$SO" ]; then
 fi
 MODULO="${1:-fondo}"
 case "$MODULO" in fondo|galeria) ;; *) echo "módulo no previsto: $MODULO" >&2; exit 2 ;; esac
+# La galería se lanza al pulsar el atajo: dos pulsaciones seguidas no deben crear dos
+if [ "$MODULO" = galeria ]; then exec quickshell -c galeria --no-duplicate; fi
 exec quickshell -c "$MODULO"

@@ -348,7 +348,7 @@ window-rule {
 
 binds {
     Mod+A { spawn "qs" "-c" "cajon" "ipc" "call" "cajon" "toggle"; }
-    Mod+Shift+W hotkey-overlay-title="Galería de fondos" { spawn "qs" "-c" "galeria" "ipc" "call" "galeria" "toggle"; }
+    Mod+Shift+W hotkey-overlay-title="Galería de fondos" { spawn "@HOME@/.local/bin/galeria-abrir.sh"; }
     Mod+Shift+D hotkey-overlay-title="Personalizar escritorio" { spawn "qs" "-c" "escritorio" "ipc" "call" "escritorio" "personalizar"; }
     Mod+V hotkey-overlay-title="Historial del portapapeles" { spawn "qs" "-c" "portapapeles" "ipc" "call" "portapapeles" "toggle"; }
     Mod+Shift+S hotkey-overlay-title="Panel de capturas" { spawn "qs" "-c" "hola" "ipc" "call" "hola" "pagina" "capturas"; }
@@ -667,8 +667,7 @@ window-rule {
 // Dock flotante (diseño A). La barra estilo Windows se retiró el 2026-10-31:
 // está en ~/respaldos-limpieza/barra
 spawn-at-startup "quickshell" "-c" "dock"
-// galeria: con VA-API (vista previa de vídeo decodificada en la Radeon, ver fondo-arrancar.sh)
-spawn-at-startup "@HOME@/.local/bin/fondo-arrancar.sh" "galeria"
+// galeria: no arranca aquí, solo corre mientras se usa (ver galeria-abrir.sh)
 spawn-at-startup "quickshell" "-c" "cajon"
 
 // Historial del portapapeles: cliphist guarda texto e imágenes; Mod+V lo muestra

@@ -9,15 +9,27 @@ import Qt.labs.folderlistmodel
 // inclina el marco) que pierden opacidad y nitidez con la distancia; la del centro se endereza y crece.
 // Detrás, la imagen fija difuminada del fondo elegido. Vídeo/GIF solo en la tarjeta del centro.
 // Debajo, el nombre, la paleta de matugen y la maqueta de la barra.
+// Solo corre mientras se usa (la lanza ~/.local/bin/galeria-abrir.sh): al arrancar se abre y al ocultarse termina.
+// No se recarga: toma los colores al arrancar, y una recarga de matugen la abriría otra vez justo tras aplicar un fondo.
 Scope {
     id: root
 
-    // Sin el aviso "Config reloaded": matugen recarga este módulo en cada cambio de fondo.
-    // Solo se oculta el de recarga correcta; el de error sigue saliendo.
-    Connections {
-        target: Quickshell
-        function onReloadCompleted() { Quickshell.inhibitReloadPopup() }
+    Component.onCompleted: {
+        Quickshell.watchFiles = false
+        Principal.pedirEnfocada(n => {
+            root.salida = n
+            root.arrancando = true
+            root.revisarArranque()
+            esperaArranque.start()
+        })
     }
+    // Abrir cuando ya se sabe qué fondo es y está la lista: si no, se vería la primera tarjeta y luego un salto
+    property bool arrancando: false
+    function revisarArranque() {
+        if (root.arrancando && root.actual !== "" && carpetaModelo.count > 0) root.abrir()
+    }
+    // Sin fondos o sin fondo actual también se abre
+    Timer { id: esperaArranque; interval: 500; onTriggered: if (root.arrancando) root.abrir() }
 
     // ===== Ajustes =====
     property string carpeta: Quickshell.env("HOME") + "/Pictures/wallpapers"
@@ -168,6 +180,7 @@ Scope {
     }
 
     function abrir() {
+        root.arrancando = false
         esconder.stop()
         root.aplicando = false
         ventana.visible = true
@@ -215,7 +228,10 @@ Scope {
     Timer {
         id: esconder
         interval: 450
-        onTriggered: ventana.visible = false
+        onTriggered: {
+            ventana.visible = false
+            Qt.quit()
+        }
     }
 
     // Fondo aplicado actualmente
@@ -223,7 +239,10 @@ Scope {
         path: Quickshell.env("HOME") + "/.cache/wallpaper-actual"
         watchChanges: true
         onFileChanged: reload()
-        onLoaded: root.actual = text().trim()
+        onLoaded: {
+            root.actual = text().trim()
+            root.revisarArranque()
+        }
     }
 
     FolderListModel {
@@ -234,7 +253,7 @@ Scope {
         showDirs: false
         sortField: FolderListModel.Name
         onStatusChanged: { root.version++; if (status === FolderListModel.Ready) buscarFotogramas.restart() }
-        onCountChanged: { root.version++; buscarFotogramas.restart() }
+        onCountChanged: { root.version++; buscarFotogramas.restart(); root.revisarArranque() }
     }
 
     // ===== Fotogramas de vídeos/GIF (miniatura, vista previa y paleta) =====

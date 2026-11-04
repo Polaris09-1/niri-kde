@@ -108,7 +108,10 @@ ShellRoot {
     // ===== Estado =====
     property bool bloqueado: false
     // Avisa al fondo animado para que pause el vídeo mientras está bloqueado (y con la pantalla apagada)
-    onBloqueadoChanged: Quickshell.execDetached(["qs", "-c", "fondo", "ipc", "call", "fondo", "bloqueo", root.bloqueado ? "si" : "no"])
+    onBloqueadoChanged: {
+        Quickshell.execDetached(["qs", "-c", "fondo", "ipc", "call", "fondo", "bloqueo", root.bloqueado ? "si" : "no"])
+        root.publicarDespierto()    // la píldora de música de "hola" para las ondas
+    }
     property real horaBloqueo: 0
     property bool verificando: false
     property string error: ""
@@ -318,8 +321,11 @@ ShellRoot {
     property bool cafeina: false
     property var audioActivo: []        // nombres de apps con audio en estado "running"
     readonly property var jugadoresActivos: Mpris.players.values.filter(j => j.isPlaying).map(j => j.identity)
+    // Sin repetir la app: MPRIS y PipeWire la nombran distinto ("Mozilla firefox" y "Firefox")
     readonly property var medios: root.jugadoresActivos.concat(root.audioActivo)
-        .filter((v, i, l) => l.indexOf(v) === i)
+        .filter((v, i, l) => !l.slice(0, i).some(o => o.toLowerCase().indexOf(v.toLowerCase()) >= 0
+            || v.toLowerCase().indexOf(o.toLowerCase()) >= 0))
+    onAudioActivoChanged: root.publicarDespierto()
     readonly property bool despierto: root.cafeina || root.medios.length > 0
 
     // Sondeo de PipeWire: pw-dump tarda ~35 ms
@@ -385,7 +391,8 @@ ShellRoot {
     }
     function publicarDespierto() {
         if (!archivoDespierto.leido) return
-        archivoDespierto.setText(JSON.stringify({ cafeina: root.cafeina, medios: root.medios }) + "\n")
+        archivoDespierto.setText(JSON.stringify({ cafeina: root.cafeina, medios: root.medios,
+            audio: root.audioActivo, bloqueado: root.bloqueado }) + "\n")
     }
     onCafeinaChanged: {
         root.publicarDespierto()

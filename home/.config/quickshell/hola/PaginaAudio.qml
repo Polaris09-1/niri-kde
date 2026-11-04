@@ -16,7 +16,8 @@ Item {
     property var nodos: Pipewire.nodes.values
     property var salidas: a.nodos.filter(n => n.audio && !n.isStream && n.isSink)
     property var entradas: a.nodos.filter(n => n.audio && !n.isStream && !n.isSink)
-    property var apps: a.nodos.filter(n => n.audio && n.isStream && !n.isSink)
+    // Sin cava: solo escucha para las ondas de la píldora de música, no es una app con sonido
+    property var apps: a.nodos.filter(n => n.audio && n.isStream && !n.isSink && n.name !== "cava")
     property var sink: Pipewire.defaultAudioSink
     property var source: Pipewire.defaultAudioSource
 

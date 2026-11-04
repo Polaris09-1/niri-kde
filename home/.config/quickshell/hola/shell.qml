@@ -69,11 +69,15 @@ Scope {
     property int bateria: Math.round(bateriaRaw > 1 ? bateriaRaw : bateriaRaw * 100)
     property bool cargando: bat ? bat.state === UPowerDeviceState.Charging : false
 
-    // Reproductor activo (MPRIS)
-    property var jugador: {
-        var l = Mpris.players.values
-        return l.length ? (l.find(j => j.isPlaying) || l[0]) : null
+    // Reproductor activo (MPRIS) y píldora de música: todo el estado está en Reproduciendo.qml
+    Reproduciendo {
+        id: rep
+        audio: root.audioActivo
+        pausarOndas: root.barraOculta || root.sesionBloqueada
+        retener: pildoraMusica.cursorDentro
+        salida: root.sink
     }
+    readonly property var jugador: rep.jugador
 
     PwObjectTracker {
         objects: root.sink ? [root.sink] : []
@@ -234,6 +238,8 @@ Scope {
     // Mantener despierto: el estado lo lleva el módulo "bloqueo" y lo publica en este archivo
     property bool cafeina: false
     property var mediosActivos: []
+    property var audioActivo: []         // apps con audio (para la píldora de música)
+    property bool sesionBloqueada: false
     FileView {
         id: archivoDespierto
         path: Quickshell.env("XDG_RUNTIME_DIR") + "/bloqueo-despierto.json"
@@ -244,6 +250,8 @@ Scope {
                 var d = JSON.parse(text())
                 root.cafeina = d.cafeina === true
                 root.mediosActivos = d.medios || []
+                root.audioActivo = d.audio || []
+                root.sesionBloqueada = d.bloqueado === true
             } catch (e) {}
         }
         onLoadFailed: reintentarDespierto.restart()     // "bloqueo" aún no ha arrancado
@@ -478,18 +486,18 @@ Scope {
 
     // Clic en un botón, IPC o dock: abre/cierra como siempre.
     // Si ya estaba abierto al pasar el cursor, el clic lo deja fijo (no lo cierra).
-    function alternar(nombre) {
+    function alternar(nombre, desde) {
         timerAbrir.stop()
         if (root.panel === nombre && !root.porClic) { root.porClic = true; return }
-        root.mostrarPanel(nombre)
+        root.mostrarPanel(nombre, desde)
         root.porClic = root.panel !== ""
     }
 
     // Abre/cierra un panel guardando desde qué botón nace
-    function mostrarPanel(nombre) {
+    function mostrarPanel(nombre, desde) {
         if (root.panel === nombre) { root.panel = ""; return }
         // Cada panel nace de su botón (la hora y la campanita son botones distintos)
-        var item = nombre === "estado" ? pildora : nombre === "avisos" ? campana : botonReloj
+        var item = desde || (nombre === "estado" ? pildora : nombre === "avisos" ? campana : botonReloj)
         var pt = item.mapToItem(null, 0, 0)
         var r = Qt.rect(pt.x, pt.y, item.width, item.height)
         if (nombre === "estado") {
@@ -537,7 +545,13 @@ Scope {
         function calendario(): string { root.alternar("calendario"); return root.panel }
         // Panel de notificaciones (como el clic en la campanita)
         function campana(): string { root.alternar("avisos"); return root.panel }
-        // Simula dónde está el cursor (hora|campana|pildora|panel|fuera) para probar sin mouse
+        // Estado de la píldora de música
+        function musica(): string {
+            return JSON.stringify({ presente: rep.presente, sonando: rep.sonando, expandida: pildoraMusica.expandida,
+                ancho: pildoraMusica.width, titulo: rep.titulo, app: rep.nombreApp, conControles: !!rep.activo,
+                audio: rep.audioConfirmado, quiereOndas: rep.quiereOndas, cavaFallo: rep.cavaFallo, niveles: rep.niveles })
+        }
+        // Simula dónde está el cursor (hora|campana|pildora|musica|panel|fuera) para probar sin mouse
         function cursor(donde: string): string {
             root.simCursor = donde === "fuera" ? "" : donde
             root.tCursor = Date.now()
@@ -786,6 +800,7 @@ Scope {
         property Region regionIslas: Region {
             Region { x: islaIzq.x; y: islaIzq.y; width: islaIzq.width; height: islaIzq.height }
             Region { x: islaReloj.x; y: islaReloj.y; width: islaReloj.width; height: islaReloj.height }
+            Region { x: pildoraMusica.x; y: pildoraMusica.y; width: rep.presente ? pildoraMusica.width : 0; height: pildoraMusica.height }
             Region { x: islaDer.x; y: islaDer.y; width: islaDer.width; height: islaDer.height }
         }
         property Region regionSensor: Region { x: 0; y: 0; width: ventana.width; height: root.altoSensor }
@@ -897,6 +912,21 @@ Scope {
                             onClic: root.ejecutar(["niri", "msg", "action", "toggle-overview"])
                         }
                     }
+                }
+
+                // ---------- Reproduciendo ahora: a la izquierda de la hora, crece hacia la izquierda ----------
+                PildoraMusica {
+                    id: pildoraMusica
+                    anchors.right: islaReloj.left
+                    anchors.rightMargin: 8
+                    anchors.top: parent.top
+                    anchors.topMargin: 8
+                    rep: rep
+                    s: root
+                    tema: tema
+                    simEncima: root.simCursor === "musica"
+                    disponible: islaReloj.x - 8 - (islaIzq.x + islaIzq.width) - 8
+                    onAbrir: root.alternar("calendario", pildoraMusica)
                 }
 
                 // ---------- Isla central: hora (abre el calendario) ----------
@@ -1175,6 +1205,7 @@ Scope {
             item: raizCapa
             Region { x: islaIzq.x; y: islaIzq.y; width: islaIzq.width; height: islaIzq.height; intersection: Intersection.Subtract }
             Region { x: islaReloj.x; y: islaReloj.y; width: islaReloj.width; height: islaReloj.height; intersection: Intersection.Subtract }
+            Region { x: pildoraMusica.x; y: pildoraMusica.y; width: rep.presente ? pildoraMusica.width : 0; height: pildoraMusica.height; intersection: Intersection.Subtract }
             Region { x: islaDer.x; y: islaDer.y; width: islaDer.width; height: islaDer.height; intersection: Intersection.Subtract }
         }
 
@@ -1566,6 +1597,7 @@ Scope {
                                 width: parent.width
                                 elide: Text.ElideRight
                                 text: root.cafeina ? "No se bloquea ni se suspende solo"
+                                    : rep.sonando ? "Reproduciendo: " + rep.titulo
                                     : root.mediosActivos.length ? "Reproduciendo: " + root.mediosActivos.join(", ")
                                     : "Se bloquea tras 10 min sin uso"
                                 font.family: root.fuente
@@ -1983,7 +2015,7 @@ Scope {
 
                     // Música (solo si hay un reproductor)
                     Rectangle {
-                        visible: root.jugador !== null
+                        visible: rep.activo !== null || rep.audioConfirmado.length > 0
                         width: parent.width
                         height: 58
                         radius: 16
@@ -1998,7 +2030,8 @@ Scope {
                             Text {
                                 width: parent.width
                                 elide: Text.ElideRight
-                                text: root.jugador ? (root.jugador.trackTitle || "Sin título") : ""
+                                text: rep.titulo
+                                textFormat: Text.PlainText
                                 font.family: root.fuente
                                 font.pixelSize: 12
                                 font.bold: true
@@ -2007,7 +2040,8 @@ Scope {
                             Text {
                                 width: parent.width
                                 elide: Text.ElideRight
-                                text: root.jugador ? (root.jugador.trackArtist || root.jugador.identity || "") : ""
+                                text: rep.activo ? (rep.activo.trackArtist || rep.nombreApp) : rep.nombreApp
+                                textFormat: Text.PlainText
                                 font.family: root.fuente
                                 font.pixelSize: 11
                                 color: root.alfa(tema.surfaceText, 0.65)
@@ -2018,13 +2052,22 @@ Scope {
                             anchors.right: parent.right
                             anchors.rightMargin: 8
                             anchors.verticalCenter: parent.verticalCenter
-                            Boton { tema: tema; icono: root.ic(0xF04AE); onClic: if (root.jugador) root.jugador.previous() }
+                            Boton {
+                                tema: tema; icono: root.ic(0xF04AE)
+                                enabled: !!rep.activo; opacity: enabled ? 1 : 0.35
+                                onClic: rep.activo.previous()
+                            }
                             Boton {
                                 tema: tema
-                                icono: root.jugador && root.jugador.isPlaying ? root.ic(0xF03E4) : root.ic(0xF040A)
-                                onClic: if (root.jugador) root.jugador.togglePlaying()
+                                icono: rep.activo && rep.activo.isPlaying ? root.ic(0xF03E4) : root.ic(0xF040A)
+                                enabled: !!rep.activo; opacity: enabled ? 1 : 0.35
+                                onClic: rep.activo.togglePlaying()
                             }
-                            Boton { tema: tema; icono: root.ic(0xF04AD); onClic: if (root.jugador) root.jugador.next() }
+                            Boton {
+                                tema: tema; icono: root.ic(0xF04AD)
+                                enabled: !!rep.activo; opacity: enabled ? 1 : 0.35
+                                onClic: rep.activo.next()
+                            }
                         }
                     }
 

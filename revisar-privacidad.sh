@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# revisar-privacidad.sh — busca datos privados en el repositorio ANTES de subirlo.
-# Sale con código 1 si encuentra algo que casi seguro es privado; las "palabras a revisar"
+# revisar-privacidad.sh — busca datos privados y enlaces mal hechos en el repositorio ANTES de subirlo.
+# Sale con código 1 si encuentra algo que casi seguro es privado o un enlace que fallaría en otro equipo; las "palabras a revisar"
 # (password, token…) solo se muestran: en el código del escritorio aparecen legítimamente.
 set -uo pipefail
 
@@ -67,6 +67,29 @@ done
 # Nombre del equipo
 buscarLiteral "Nombre del equipo" "$(cat /etc/hostname 2>/dev/null)"
 
+# Enlaces simbólicos: un enlace absoluto o roto no funcionaría en otro equipo (y puede delatar una ruta)
+r="$(find . -path ./.git -prune -o -type l -lname '/*' -printf '   %p -> %l\n')"
+if [ -n "$r" ]; then
+    echo "-- Enlaces absolutos (deben ser relativos):"
+    echo "$r"
+    grave=1
+fi
+r="$(find . -path ./.git -prune -o -xtype l -printf '   %p -> %l\n')"
+if [ -n "$r" ]; then
+    echo "-- Enlaces rotos:"
+    echo "$r"
+    grave=1
+fi
+# Principal.qml: sin el enlace, el módulo arranca igual y solo deja un aviso en el registro
+for modulo in home/.config/quickshell/*/; do
+    modulo="${modulo%/}"
+    [ "$(basename "$modulo")" = hola ] && continue
+    if grep -hsE --exclude=Principal.qml 'Principal\.' "$modulo"/*.qml | grep -qv 'Principal\.qml' && [ ! -L "$modulo/Principal.qml" ]; then
+        echo "-- $modulo usa Principal y no tiene el enlace ../hola/Principal.qml"
+        grave=1
+    fi
+done
+
 echo "-- Palabras a revisar a mano (normalmente es código que PIDE la contraseña, no una contraseña):"
 grep -rnIiE --exclude-dir=.git --exclude=revisar-privacidad.sh -e 'password *[:=] *["'"'"'][^"'"'"']+|passwd *=|psk *=' . | head -10 | sed 's/^/   /'
 
@@ -74,6 +97,6 @@ echo
 if [ "$grave" -eq 0 ]; then
     echo "OK: no se encontraron datos privados claros. Revisa igualmente la lista de arriba si hay algo."
 else
-    echo "ATENCIÓN: hay posibles datos privados (arriba). Corrígelos antes de subir."
+    echo "ATENCIÓN: hay posibles datos privados o enlaces mal hechos (arriba). Corrígelos antes de subir."
 fi
 exit "$grave"

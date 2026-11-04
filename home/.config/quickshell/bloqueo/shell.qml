@@ -358,6 +358,8 @@ ShellRoot {
     // Una capa transparente de 1 px basta para sostener el inhibidor: está en Overlay para que
     // ninguna ventana la tape. No recibe el mouse.
     PanelWindow {
+        screen: Principal.pantalla
+        visible: Principal.lista
         id: capaDespierto
         anchors.bottom: true
         anchors.left: true
@@ -547,7 +549,8 @@ ShellRoot {
     function avisoVista() { root.mensajeVista = "Vista previa: no se comprueba la contraseña" }
     Timer { id: finVista; onTriggered: { root.vista = false; root.mensajeVista = "" } }
     PanelWindow {
-        visible: root.vista
+        screen: Principal.pantalla
+        visible: Principal.lista && (root.vista)
         anchors { top: true; bottom: true; left: true; right: true }
         color: "black"
         exclusionMode: ExclusionMode.Ignore

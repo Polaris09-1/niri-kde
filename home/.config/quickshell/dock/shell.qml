@@ -314,6 +314,8 @@ Scope {
 
     // Oscurece el resto de la pantalla (no bloquea clics)
     PanelWindow {
+        screen: Principal.pantalla
+        visible: Principal.lista
         anchors { top: true; bottom: true; left: true; right: true }
         exclusionMode: ExclusionMode.Ignore
         color: "transparent"
@@ -329,6 +331,8 @@ Scope {
 
     // Sensor invisible en el borde inferior
     PanelWindow {
+        screen: Principal.pantalla
+        visible: Principal.lista
         anchors {
             bottom: true
             left: true
@@ -350,6 +354,7 @@ Scope {
 
     // El dock
     PanelWindow {
+        screen: Principal.pantalla
         id: ventana
         visible: false
         anchors.bottom: true

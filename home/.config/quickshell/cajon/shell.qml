@@ -101,6 +101,7 @@ Scope {
     }
 
     PanelWindow {
+        screen: Principal.pantalla
         id: ventana
         visible: false
         anchors {

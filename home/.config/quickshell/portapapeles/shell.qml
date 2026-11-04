@@ -230,7 +230,8 @@ Scope {
 
     // ===== Ventana =====
     PanelWindow {
-        visible: root.visibleVentana
+        screen: Principal.pantalla
+        visible: Principal.lista && (root.visibleVentana)
         anchors { top: true; bottom: true; left: true; right: true }
         exclusionMode: ExclusionMode.Ignore
         color: "transparent"

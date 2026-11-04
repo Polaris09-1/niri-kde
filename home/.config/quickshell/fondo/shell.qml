@@ -308,6 +308,8 @@ Scope {
 
     // ===================== Capa nítida =====================
     PanelWindow {
+        screen: Principal.pantalla
+        visible: Principal.lista
         id: nitida
         anchors {
             top: true
@@ -382,6 +384,8 @@ Scope {
 
     // ===================== Capa difuminada (vista general) =====================
     PanelWindow {
+        screen: Principal.pantalla
+        visible: Principal.lista
         anchors {
             top: true
             bottom: true

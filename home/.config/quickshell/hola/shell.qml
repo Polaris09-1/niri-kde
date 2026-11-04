@@ -480,7 +480,10 @@ Scope {
                 var d
                 try { d = JSON.parse(text) } catch (e) { return }
                 var ahora = {}
-                Object.keys(d).forEach(k => ahora[k] = [d[k].make, d[k].model].filter(x => !!x).join(" ") || k)
+                Object.keys(d).forEach(k => {
+                    var n = [d[k].make, d[k].model].filter(x => x && x !== "Unknown").join(" ")
+                    ahora[k] = n || (/^Virtual/i.test(k) ? "Monitor virtual" : k)
+                })
                 var antes = root.monitores
                 root.monitores = ahora
                 if (!antes) return
@@ -826,6 +829,8 @@ Scope {
 
     // ===== La barra =====
     PanelWindow {
+        screen: Principal.pantalla
+        visible: Principal.lista
         id: ventana
         anchors {
             top: true
@@ -1240,6 +1245,7 @@ Scope {
 
     // ===== Capa de paneles (calendario y estado) =====
     PanelWindow {
+        screen: Principal.pantalla
         id: capa
         anchors {
             top: true
@@ -1247,7 +1253,7 @@ Scope {
             left: true
             right: true
         }
-        visible: root.panel !== "" || panelEstado.vivo || panelCal.vivo
+        visible: Principal.lista && (root.panel !== "" || panelEstado.vivo || panelCal.vivo)
         exclusionMode: ExclusionMode.Ignore
         color: "transparent"
         WlrLayershell.layer: WlrLayer.Overlay

@@ -6,6 +6,7 @@ import QtQuick.Effects
 // Popups de notificaciones: arriba a la derecha, debajo de la barra.
 // Entran deslizándose desde el borde; al irse salen hacia la derecha y los demás suben.
 PanelWindow {
+    screen: Principal.pantalla
     id: w
 
     property var s
@@ -24,7 +25,7 @@ PanelWindow {
     // Alto fijo (la máscara deja pasar los clics fuera de las tarjetas): redimensionar
     // la ventana en cada fotograma de la animación daría tirones
     implicitHeight: w.screen ? Math.round(w.screen.height * 0.85) : 900
-    visible: w.av.emergentes.count > 0 && !w.oculto
+    visible: Principal.lista && (w.av.emergentes.count > 0 && !w.oculto)
     exclusionMode: ExclusionMode.Normal
     exclusiveZone: 0
     color: "transparent"

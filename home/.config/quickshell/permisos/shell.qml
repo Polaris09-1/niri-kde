@@ -163,6 +163,7 @@ ShellRoot {
 
     // ===== Diálogo =====
     PanelWindow {
+        screen: Principal.pantalla
         id: ventana
         anchors { top: true; bottom: true; left: true; right: true }
         color: "transparent"
@@ -172,7 +173,7 @@ ShellRoot {
         WlrLayershell.namespace: "permisos"
         // Teclado solo para el diálogo mientras está abierto (la contraseña no se escapa a otra app)
         WlrLayershell.keyboardFocus: agente.isActive ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
-        visible: p > 0.001
+        visible: Principal.lista && (p > 0.001)
 
         // Entra en 150 ms y sale en 120 (OutCubic, sin rebote ni zoom)
         property real p: agente.isActive ? 1 : 0

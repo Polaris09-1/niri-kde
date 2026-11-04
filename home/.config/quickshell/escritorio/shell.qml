@@ -1212,6 +1212,8 @@ Scope {
 
     // ===================================================================
     PanelWindow {
+        screen: Principal.pantalla
+        visible: Principal.lista
         id: ventana
         anchors {
             top: true

@@ -13,10 +13,18 @@ Column {
     // ===== Salidas =====
     property var reales: []
     // id = cómo lo reconoce niri aunque cambie de puerto; sin marca y modelo, el nombre del conector
+    // Un monitor sin marca ni modelo (virtual, o sin EDID) dice "Unknown": se reconoce por su conector
+    function dato(t) { return t && t !== "Unknown" ? t : "" }
     readonly property var salidas: (c.raiz.salidasSimuladas || c.reales).map(o =>
-        Object.assign({}, o, { id: o.make && o.model ? o.make + " " + o.model + " " + (o.serial || "Unknown") : o.name }))
+        Object.assign({}, o, { id: c.dato(o.make) && c.dato(o.model) ? o.make + " " + o.model + " " + (o.serial || "Unknown") : o.name }))
+    function nombreDe(o) {
+        var n = [c.dato(o.make), c.dato(o.model)].filter(x => !!x).join(" ")
+        return n || (/^Virtual/i.test(o.name) ? "Monitor virtual" : o.name)
+    }
     property string elegida: ""
-    readonly property var activa: c.salidas.find(o => o.name === c.elegida) || c.salidas.find(o => !!o.logical) || c.salidas[0] || null
+    // Sin elegir: el principal, si no la pantalla del portátil, si no la primera encendida
+    readonly property var activa: c.salidas.find(o => o.name === c.elegida) || c.salidas.find(o => o.id === c.principal)
+        || c.salidas.find(o => /^eDP/.test(o.name)) || c.salidas.find(o => !!o.logical) || c.salidas[0] || null
     onSalidasChanged: c.leerGpus()
 
     // A qué GPU va cada conector
@@ -169,7 +177,7 @@ Column {
 
             FilaSimple {
                 raiz: c.raiz
-                t: [tarjeta.o.make, tarjeta.o.model].filter(x => !!x).join(" ") || tarjeta.o.name
+                t: c.nombreDe(tarjeta.o)
                 a: tarjeta.o.name + (c.gpus[tarjeta.o.name] ? " · " + c.gpus[tarjeta.o.name] : "")
                     + (tarjeta.actual ? " · " + tarjeta.actual.width + "×" + tarjeta.actual.height
                     + " a " + Math.round(tarjeta.actual.refresh_rate / 1000) + " Hz" : " · apagada")

@@ -194,6 +194,7 @@ ShellRoot {
                                   || (root.tipo === "mayus" && !root.mayus)
 
     PanelWindow {
+        screen: Principal.pantalla
         id: ventana
         anchors.bottom: true
         implicitWidth: 300
@@ -205,7 +206,7 @@ ShellRoot {
         WlrLayershell.namespace: "osd"
         WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
         mask: Region {}                   // no atrapa el mouse: los clics pasan
-        visible: p > 0.001
+        visible: Principal.lista && (p > 0.001)
 
         // Blur real de niri (ext-background-effect), solo con la forma de la pastilla.
         // Se pide a mitad del fundido para que no aparezca de golpe.

@@ -19,7 +19,7 @@ Pensado para usarse **sin terminal**: casi todo tiene su panel.
 |---|---|
 | ![Bloqueo](capturas/bloqueo.jpg) | ![OSD](capturas/osd.png) |
 
-> Los fondos de las capturas no se incluyen en el repositorio (son de sus autores). El clima, los recordatorios y el saludo muestran datos de ejemplo.
+> Los fondos de las capturas no se incluyen en el repositorio (son de sus autores). El clima, los recordatorios, la música, los avisos y los nombres muestran datos de ejemplo.
 
 ## Qué incluye
 
@@ -50,10 +50,11 @@ Además:
 - **Inactividad y cafeína**: no se atenúa, bloquea ni suspende mientras un programa pide evitarlo, un reproductor está en marcha (MPRIS) o sale audio (PipeWire); sirve también para los vídeos con DRM, en ventana o a pantalla completa. Al pausar, el contador vuelve a correr. Además, la tarjeta **Mantener despierto** del panel activa una cafeína manual, con una taza en la barra que la apaga con un clic.
 - **Pantalla completa como en macOS**: al poner una ventana a pantalla completa (F11, la F de YouTube o <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>) la barra sube y deja todo el espacio a la ventana; baja encima al acercar el mouse al borde de arriba (con sus paneles) y el dock aparece desde el borde de abajo. Mientras dura, los avisos normales van directo al historial; los urgentes, el OSD, el portapapeles y el bloqueo siguen saliendo encima. Se detecta por monitor con el `event-stream` de niri.
 - **Energía**: modos Ahorro / Equilibrado / Rendimiento (power-profiles-daemon) en el panel; **luz nocturna** con wlsunset que se enciende sola al ponerse el sol (o siempre), con su calidez ajustable y vista previa; **límite de carga al 80 %** con UPower (sin sudo ni contraseña: polkit lo permite al usuario de la sesión), con la salud de la batería. Pon tu latitud/longitud en `~/.config/quickshell/hola/luz-nocturna.json` (en el repo vienen en 0,0).
-- **Terminal**: prompt de [starship](https://starship.rs) en píldoras redondeadas como la barra y [fastfetch](https://github.com/fastfetch-cli/fastfetch) en español, los dos con los colores del fondo (plantillas de matugen). fastfetch sale solo en la primera terminal que abras tú en la sesión con `Mod+T`, el cajón o el dock (luego, escribiendo `fastfetch`); nunca por SSH, dentro de herramientas como Claude Code o VS Code, ni en terminales abiertas desde otras apps. No muestra usuario, equipo ni IP. Alacritty usa JetBrainsMono Nerd Font. `install.sh` añade una línea a `~/.bashrc` que carga `~/.config/bash/escritorio.sh`.
+- **Terminal**: prompt de [starship](https://starship.rs) en píldoras redondeadas como la barra y [fastfetch](https://github.com/fastfetch-cli/fastfetch) en español, los dos con los colores del fondo (plantillas de matugen). fastfetch sale solo en la primera terminal que abras tú en la sesión con <kbd>Super</kbd>+<kbd>T</kbd>, el cajón o el dock (luego, escribiendo `fastfetch`); nunca por SSH, dentro de herramientas como Claude Code o VS Code, ni en terminales abiertas desde otras apps. No muestra usuario, equipo ni IP. Alacritty usa JetBrainsMono Nerd Font. `install.sh` añade una línea a `~/.bashrc` que carga `~/.config/bash/escritorio.sh`.
 - **niri**: animaciones propias sin rebote (abrir/cerrar con shader), sombras y borde con los colores del fondo.
+- **Modo infinito**: la navegación da la vuelta al llegar al extremo. <kbd>Super</kbd>+<kbd>U</kbd> / <kbd>I</kbd> y <kbd>Super</kbd>+rueda recorren los workspaces en ciclo, con el workspace vacío del final (donde se ve el escritorio) como una parada más; si no hay ventanas, no hacen nada. <kbd>Super</kbd>+<kbd>←</kbd> <kbd>→</kbd> recorre las columnas y <kbd>Super</kbd>+<kbd>↑</kbd> <kbd>↓</kbd> las ventanas de la columna. Con el touchpad, <kbd>Super</kbd> + dos dedos. **Límite de niri**: dentro de <kbd>Super</kbd>+<kbd>O</kbd> solo da la vuelta con <kbd>Super</kbd> pulsado, y los gestos de tres dedos no dan la vuelta en ningún caso.
 - **matugen**: plantillas para Quickshell, niri, alacritty, fuzzel, swaylock, GTK 3/4 (adw-gtk3), Qt (qt5ct/qt6ct), KDE (`kdeglobals`) y SDDM.
-- **Scripts** en `~/.local/bin`: `wallpaper.sh` (pone el fondo y regenera los colores), `fondo-fotograma.sh`, `fondo-arrancar.sh` (arranca el fondo con decodificación por hardware si puede), `fondo-optimizar.sh` (copia del vídeo a tamaño de pantalla), `fondo-login.sh` (pasa el fondo a la pantalla de inicio de sesión, aunque cambies de fondo o apagues enseguida), `aplicar-colores-apps.sh` y `bloquear.sh`.
+- **Scripts** en `~/.local/bin`: `wallpaper.sh` (pone el fondo y regenera los colores), `fondo-fotograma.sh`, `fondo-arrancar.sh` (arranca el fondo con decodificación por hardware si puede), `fondo-optimizar.sh` (copia del vídeo a tamaño de pantalla), `fondo-login.sh` (pasa el fondo a la pantalla de inicio de sesión, aunque cambies de fondo o apagues enseguida), `aplicar-colores-apps.sh`, `bloquear.sh` y `workspace-circular.sh` (workspaces en ciclo).
 - **SDDM**: tema [sddm-astronaut](https://github.com/Keyitdev/sddm-astronaut-theme) con un diseño propio (`Tarjeta.qml`) igual a la pantalla de bloqueo de Quickshell: tarjeta centrada translúcida, fondo actual (fotograma si es vídeo) difuminado, colores de matugen, fecha en español, campos de usuario y contraseña en pastilla, contador de intentos fallidos (5 → espera 2 min), selección de sesión y energía con cuenta atrás. Se guarda solo el parche, no el tema entero; para volver al diseño original: `MainScript=Main.qml` en `metadata.desktop`.
 
 ## Instalación
@@ -111,12 +112,13 @@ Después:
 |---|---|
 | <kbd>Super</kbd>+<kbd>Q</kbd> | Cerrar la ventana |
 | <kbd>Super</kbd>+<kbd>O</kbd> | Vista general de workspaces |
-| <kbd>Super</kbd>+<kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> (o <kbd>H</kbd> <kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd>) | Mover el foco |
+| <kbd>Super</kbd>+<kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> (o <kbd>H</kbd> <kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd>) | Mover el foco (da la vuelta entre columnas y dentro de la columna) |
 | <kbd>Super</kbd>+<kbd>Ctrl</kbd>+flechas | Mover la ventana/columna |
 | <kbd>Super</kbd>+<kbd>1</kbd>…<kbd>9</kbd> | Ir al workspace |
 | <kbd>Super</kbd>+<kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>9</kbd> | Mover la columna a ese workspace |
-| <kbd>Super</kbd>+<kbd>U</kbd> / <kbd>I</kbd> (o <kbd>AvPág</kbd> / <kbd>RePág</kbd>) | Workspace de abajo / de arriba |
-| <kbd>Super</kbd>+rueda del mouse | Cambiar de workspace |
+| <kbd>Super</kbd>+<kbd>U</kbd> / <kbd>I</kbd> (o <kbd>AvPág</kbd> / <kbd>RePág</kbd>) | Workspace de abajo / de arriba (da la vuelta) |
+| <kbd>Super</kbd>+rueda del mouse | Cambiar de workspace (da la vuelta) |
+| <kbd>Super</kbd> + dos dedos en el touchpad | Vertical: workspaces · horizontal: columnas (da la vuelta) |
 | <kbd>Super</kbd>+<kbd>F</kbd> · <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> | Maximizar la columna · pantalla completa |
 | <kbd>Super</kbd>+<kbd>R</kbd> | Cambiar el ancho de la columna (1/3, 1/2, 2/3) |
 | <kbd>Super</kbd>+<kbd>-</kbd> / <kbd>=</kbd> | Ancho −10 % / +10 % |
@@ -156,12 +158,19 @@ niri-kde/
 ├── revisar-privacidad.sh   busca datos privados antes de subir
 ├── archivos.txt            qué archivos forman el escritorio
 ├── paquetes.txt            paquetes de los repos oficiales
+├── LICENSE                 licencia GPL-3.0
 ├── home/                   los archivos, con la misma ruta que en $HOME
 │   ├── .config/{niri,quickshell,matugen,alacritty,fuzzel,swaylock,qt5ct,qt6ct,environment.d}
-│   └── .local/{bin,share/dbus-1/services}
+│   ├── .config/{fastfetch,bash}   fastfetch y lo que carga ~/.bashrc (prompt y fastfetch)
+│   ├── .config/starship.toml      prompt de la terminal
+│   └── .local/{bin,share/{applications,dbus-1/services}}
 ├── sddm/                   parche del tema sddm-astronaut, tema niri-matugen y theme.conf
 └── capturas/
 ```
+
+## Licencia
+
+[GPL-3.0](LICENSE). Los programas y temas de terceros que se usan aquí conservan sus propias licencias (ver Créditos).
 
 ## Créditos
 

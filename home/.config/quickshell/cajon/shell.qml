@@ -6,6 +6,13 @@ import QtQuick
 
 Scope {
     id: root
+
+    // Sin el aviso "Config reloaded": matugen recarga este módulo en cada cambio de fondo.
+    // Solo se oculta el de recarga correcta; el de error sigue saliendo.
+    Connections {
+        target: Quickshell
+        function onReloadCompleted() { Quickshell.inhibitReloadPopup() }
+    }
     property bool abierto: false
     property string filtro: ""
 
@@ -80,7 +87,9 @@ Scope {
     }
 
     function lanzar(app) {
-        app.execute()
+        // execute() no abre terminal: una app con Terminal=true quedaría corriendo sin ventana
+        if (app.runInTerminal) Quickshell.execDetached(["alacritty", "-e"].concat(app.command))
+        else app.execute()
         root.cerrar()
     }
 

@@ -7,6 +7,13 @@ import QtQuick.Effects
 
 Scope {
     id: root
+
+    // Sin el aviso "Config reloaded": matugen recarga este módulo en cada cambio de fondo.
+    // Solo se oculta el de recarga correcta; el de error sigue saliendo.
+    Connections {
+        target: Quickshell
+        function onReloadCompleted() { Quickshell.inhibitReloadPopup() }
+    }
     property bool mostrar: false
 
     // ===== Ajustes (cámbialos a tu gusto) =====

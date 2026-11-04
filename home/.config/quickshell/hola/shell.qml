@@ -15,6 +15,13 @@ import QtQuick
 Scope {
     id: root
 
+    // Sin el aviso "Config reloaded": matugen recarga este módulo en cada cambio de fondo.
+    // Solo se oculta el de recarga correcta; el de error sigue saliendo.
+    Connections {
+        target: Quickshell
+        function onReloadCompleted() { Quickshell.inhibitReloadPopup() }
+    }
+
     // ===== Ajustes =====
     // Paneles al pasar el cursor (hora, campanita y píldora)
     property bool abrirAlPasar: true

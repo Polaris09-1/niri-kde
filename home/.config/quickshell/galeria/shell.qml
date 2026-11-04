@@ -12,6 +12,13 @@ import Qt.labs.folderlistmodel
 Scope {
     id: root
 
+    // Sin el aviso "Config reloaded": matugen recarga este módulo en cada cambio de fondo.
+    // Solo se oculta el de recarga correcta; el de error sigue saliendo.
+    Connections {
+        target: Quickshell
+        function onReloadCompleted() { Quickshell.inhibitReloadPopup() }
+    }
+
     // ===== Ajustes =====
     property string carpeta: Quickshell.env("HOME") + "/Pictures/wallpapers"
     property string script: Quickshell.env("HOME") + "/.local/bin/wallpaper.sh"

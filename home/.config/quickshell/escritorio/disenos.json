@@ -6,7 +6,7 @@
         "clave": "reloj",
         "tipo": "reloj",
         "col": 42,
-        "fila": 19,
+        "fila": 17,
         "tam": "L",
         "opciones": {
           "h12": false,
@@ -17,15 +17,15 @@
         "clave": "clima",
         "tipo": "clima",
         "col": 47,
-        "fila": 12,
+        "fila": 9,
         "tam": "M",
         "opciones": {}
       },
       {
         "clave": "musica",
         "tipo": "musica",
-        "col": 48,
-        "fila": 8,
+        "col": 25,
+        "fila": 25,
         "tam": "S",
         "opciones": {}
       },
@@ -43,7 +43,7 @@
         "clave": "recordatorios",
         "tipo": "recordatorios",
         "col": 0,
-        "fila": 14,
+        "fila": 18,
         "tam": "M",
         "opciones": {}
       }

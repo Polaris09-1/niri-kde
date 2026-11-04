@@ -13,7 +13,8 @@ import Qt.labs.folderlistmodel
 // - NO se recarga solo (Quickshell.watchFiles = false): matugen reescribe Colors.qml al cambiar el fondo
 //   y una recarga perdería la edición en curso. Los colores se leen con FileView. Tras editar este módulo:
 //   pkill -f -- '-c escritorio$'; niri msg action spawn -- qs -c escritorio
-// - Diseño guardado en disenos.json (junto a este archivo).
+// - Diseños en disenos.json (junto a este archivo): "global" y "fondos" (uno propio por fondo, con la ruta
+//   relativa a ~/Pictures/wallpapers). Al cambiar de fondo se carga el suyo o, si no tiene, el global.
 //
 // IPC: qs -c escritorio ipc call escritorio <personalizar|listo|cancelar|info|menu <i>|quitar|cerrar|
 //      mover <clave> <col> <fila>|tam <clave> <S|M|L>|opcion <clave> <opción> <valor>|panel <clave>|
@@ -56,6 +57,8 @@ Scope {
     })
     readonly property string prefijoIcono: "icono:"
     readonly property string prefijoGrupo: "grupo:"
+    readonly property string carpetaFondos: Quickshell.env("HOME") + "/Pictures/wallpapers/"
+    property int duracionFundido: 200       // ms de cada mitad del cambio de diseño entre fondos
     property int esperaGrupo: 500           // ms sobre otro icono para que soltar cree un grupo
     // Apps que no se ofrecen (por inicio del nombre), igual que en el cajón
     readonly property var appsOcultas: ["Avahi", "Foot Client", "Foot Server", "Hardware Locality", "Qt V4L2", "xgps"]
@@ -75,6 +78,19 @@ Scope {
     property bool sobreBarra: false
     property var sinHueco: []               // archivos que no caben en la cuadrícula
     property bool disenoListo: false
+    // ----- Diseños por fondo -----
+    property string fondoActual: ""         // clave del fondo aplicado (ruta relativa a la carpeta de fondos)
+    property string cargadoPara: ""         // fondo cuyo diseño está en pantalla: ahí se guardan los cambios
+    property bool datosListos: false
+    property bool fondoListo: false
+    property bool cambiando: false          // fundido entre dos diseños
+    property real opacidadElementos: 1
+    property string dialogo: ""             // "" | "salir" | "borrarPropio"
+    readonly property bool tienePropio: root.fondoActual !== "" && !!root.datos.fondos && !!root.datos.fondos[root.fondoActual]
+    readonly property string nombreFondo: {
+        var n = root.fondoActual.split("/").pop().replace(/\.[^.]+$/, "")
+        return n.replace(/(-mp4)?[-_]+\w+[-_]com$/i, "").replace(/[-_]+/g, " ").replace(/\b\w/g, l => l.toUpperCase())
+    }
     property bool catalogoAbierto: false
     property bool escribiendo: false        // un campo fuera del modo edición necesita el teclado
     property bool usarBlur: true            // desenfoque real de niri detrás de las tarjetas
@@ -344,33 +360,127 @@ Scope {
             try {
                 var d = JSON.parse(text())
                 if (!d.global || !Array.isArray(d.global.elementos)) throw "sin diseño global"
+                if (!d.fondos) d.fondos = {}
                 root.datos = d
-                root.cargar(d.global.elementos)
-                root.disenoListo = true
-                esperaConciliar.restart()
             } catch (e) {
                 // No se pierde: queda una copia y se usa el diseño de siempre
                 console.warn("escritorio: disenos.json no se pudo leer:", e)
                 Quickshell.execDetached(["cp", "-f", "--", archivo.path, archivo.path + ".corrupto"])
-                root.cargar(root.disenoInicial)
-                root.disenoListo = true
-                esperaConciliar.restart()
+                root.datos = { version: 1, global: { elementos: root.disenoInicial }, fondos: {} }
             }
+            root.datosListos = true
+            root.iniciar()
         }
         onLoadFailed: {
-            root.cargar(root.disenoInicial)
-            root.disenoListo = true
-            esperaConciliar.restart()
+            root.datos = { version: 1, global: { elementos: root.disenoInicial }, fondos: {} }
+            root.datosListos = true
+            root.iniciar()
         }
     }
 
-    function guardar() {
-        var d = root.datos
+    // ===== Diseños por fondo =====
+    function claveFondo(ruta) {
+        return ruta.startsWith(root.carpetaFondos) ? ruta.slice(root.carpetaFondos.length) : ruta
+    }
+    FileView {
+        path: Quickshell.env("HOME") + "/.cache/wallpaper-actual"
+        printErrors: false
+        watchChanges: true
+        onFileChanged: reload()
+        onLoaded: {
+            root.fondoActual = root.claveFondo(text().trim())
+            root.fondoListo = true
+            root.iniciar()
+            root.revisarFondo()
+        }
+        onLoadFailed: { root.fondoListo = true; root.iniciar() }
+    }
+    function disenoDe(clave) {
+        var f = root.datos.fondos
+        return clave !== "" && f && f[clave] ? f[clave].elementos : root.datos.global.elementos
+    }
+    // Solo cuando ya se sabe tanto el contenido del archivo como el fondo: si no, se vería un diseño y luego otro
+    function iniciar() {
+        if (root.disenoListo || !root.datosListos || !root.fondoListo) return
+        root.cargadoPara = root.fondoActual
+        root.cargar(root.disenoDe(root.fondoActual))
+        root.disenoListo = true
+        esperaConciliar.restart()
+    }
+    // Se comprueba al cambiar el fondo y al salir de la edición (mientras se edita no se toca nada)
+    function revisarFondo() {
+        if (!root.disenoListo || root.editando || root.cargadoPara === root.fondoActual) return
+        root.fundirDiseno()
+    }
+    function fundirDiseno() {
+        root.cerrarMenu()
+        root.cerrarGrupo()
+        if (root.escribiendo) { root.escribiendo = false; root.soltarTexto() }
+        root.cambiando = true
+        root.opacidadElementos = 0
+        mitadFundido.restart()
+    }
+    Timer {
+        id: mitadFundido
+        interval: root.duracionFundido
+        onTriggered: {
+            root.cargadoPara = root.fondoActual
+            root.cargar(root.disenoDe(root.fondoActual))
+            root.conciliar()
+            root.opacidadElementos = 1
+            finFundido.restart()
+        }
+    }
+    Timer {
+        id: finFundido
+        interval: root.duracionFundido
+        onTriggered: { root.cambiando = false; root.revisarFondo() }
+    }
+    // destino: "" = el diseño en pantalla · "fondo" = propio del fondo actual · "global" = para todos
+    // ("global" borra el propio solo del fondo actual: los demás conservan el suyo).
+    function guardar(destino) {
+        var d = Object.assign({}, root.datos)
+        var f = Object.assign({}, d.fondos || {})
+        var lista = root.instantanea()
+        var clave = destino ? root.fondoActual : root.cargadoPara
+        if (destino === "fondo" && clave !== "") {
+            f[clave] = { elementos: lista }
+        } else if (destino === "global") {
+            d.global = { elementos: lista }
+            delete f[clave]
+        } else if (clave !== "" && f[clave]) {
+            f[clave] = { elementos: lista }
+        } else {
+            d.global = { elementos: lista }
+        }
         d.version = 1
-        d.global = { elementos: root.instantanea() }
-        if (!d.fondos) d.fondos = {}
+        d.fondos = f
+        root.datos = d
+        if (destino) root.cargadoPara = root.fondoActual
+        archivo.setText(JSON.stringify(d, null, 2) + "\n")
+    }
+    // Vuelve al diseño general: el propio se pierde (por eso se pide confirmación antes)
+    function borrarPropio() {
+        if (!root.tienePropio) return
+        var d = Object.assign({}, root.datos)
+        var f = Object.assign({}, d.fondos)
+        delete f[root.fondoActual]
+        d.fondos = f
         root.datos = d
         archivo.setText(JSON.stringify(d, null, 2) + "\n")
+        root.dialogo = ""
+        root.cerrarMenu()
+        if (root.editando) {
+            root.seleccion = ""
+            root.panelClave = ""
+            root.cerrarGrupo()
+            root.cargadoPara = root.fondoActual
+            root.cargar(root.disenoDe(root.fondoActual))
+            root.conciliar()
+            root.alEntrar = root.instantanea()
+        } else {
+            root.fundirDiseno()
+        }
     }
 
     // ===== Cuadrícula =====
@@ -655,6 +765,14 @@ Scope {
         root.terminarArrastre()
     }
 
+    function elegirDialogo(id) {
+        if (id === "seguir") root.dialogo = ""
+        else if (id === "fondo") root.salir(true, "fondo")
+        else if (id === "global") root.salir(true, "global")
+        else if (id === "descartar") root.salir(false, "")
+        else if (id === "borrar") root.borrarPropio()
+    }
+
     // ===== Quitar =====
     // Acceso .desktop en edición: se oculta y se borra al pulsar Listo (Cancelar lo devuelve).
     // Archivo real: siempre con confirmación y a la papelera.
@@ -838,11 +956,30 @@ Scope {
     property int wsEdicion: -1              // id del workspace vacío usado para editar
 
     function personalizar() {
-        if (root.editando) { root.salir(true); return }
+        if (root.editando) { root.pedirSalida(); return }
         root.cerrarMenu()
         pEntrar.running = true
     }
+    // Con cambios, pregunta dónde guardarlos; sin cambios, sale sin más
+    function pedirSalida() {
+        if (!root.editando) return
+        root.soltarTexto()
+        root.catalogoAbierto = false
+        root.cerrarMenu()
+        if (root.hayCambios()) root.dialogo = "salir"
+        else root.salir(true, "")
+    }
     function empezar() {
+        // Si un cambio de fondo estaba a mitad, se termina ya: se edita el diseño correcto
+        if (mitadFundido.running) mitadFundido.stop()
+        if (root.cargadoPara !== root.fondoActual) {
+            root.cargadoPara = root.fondoActual
+            root.cargar(root.disenoDe(root.fondoActual))
+            root.conciliar()
+        }
+        root.opacidadElementos = 1
+        root.cambiando = false
+        root.dialogo = ""
         root.alEntrar = root.instantanea()
         root.seleccion = ""
         root.panelClave = ""
@@ -855,8 +992,9 @@ Scope {
         root.creados = []
         root.editando = true
     }
-    function salir(conservar) {
+    function salir(conservar, destino) {
         if (!root.editando) return
+        root.dialogo = ""
         root.soltarTexto()
         root.fantasma = null
         root.seleccion = ""
@@ -870,7 +1008,7 @@ Scope {
         if (conservar) {
             // Los accesos quitados se borran ahora; siguen ocultos hasta que el archivo ya no esté
             for (var q of root.quitados) Quickshell.execDetached(["rm", "--", root.carpeta + "/" + q])
-            if (root.hayCambios()) root.guardar()
+            if (root.hayCambios()) root.guardar(destino)
         } else {
             root.cargar(root.alEntrar)
             // Cancelar: vuelven los quitados y se borran solo los accesos creados en esta edición
@@ -887,6 +1025,7 @@ Scope {
         root.editando = false
         root.conciliar()                    // un archivo que llegó durante la edición no se pierde al cancelar
         if (root.volverA >= 0) pSalir.running = true
+        root.revisarFondo()                 // el fondo pudo cambiar durante la edición
     }
 
     // Workspace vacío en la misma pantalla (niri siempre deja uno al final)
@@ -1024,8 +1163,7 @@ Scope {
     }
 
     function abrir(el) {
-        if (el.entrada) el.entrada.execute()
-        else Quickshell.execDetached(["xdg-open", el.filePath])
+        root.abrirArchivo(el.fileName)
         root.cerrarMenu()
     }
 
@@ -1033,6 +1171,7 @@ Scope {
         if (!el) return []
         if (el.escritorio)
             return [ { id: "personalizar", texto: "Personalizar escritorio", icono: 0xF03EB } ]
+                .concat(root.tienePropio ? [ { id: "quitar", texto: "Volver al diseño general", icono: 0xF0450, peligro: true } ] : [])
         if (el.grupo)
             return [ { id: "abrirGrupo", texto: "Abrir", icono: 0xF0415 },
                      { id: "deshacerGrupo", texto: "Deshacer grupo", icono: 0xF0237 } ]
@@ -1056,6 +1195,7 @@ Scope {
     // Acceso directo (.desktop): se borra solo el acceso, la app no se desinstala.
     // Archivo o carpeta real: a la papelera, nunca se borra para siempre.
     function quitarAcceso(el) {
+        if (el && el.escritorio) { root.borrarPropio(); return }
         if (el && el.filePath && el.filePath.startsWith(root.carpeta + "/")) {
             if (el.fileName.endsWith(".desktop")) {
                 Quickshell.execDetached(["rm", "--", el.filePath])
@@ -1085,7 +1225,7 @@ Scope {
         WlrLayershell.layer: WlrLayer.Bottom
         WlrLayershell.namespace: "escritorio"
         WlrLayershell.keyboardFocus: root.editando || root.escribiendo ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
-        BackgroundEffect.blurRegion: root.usarBlur && root.regionesBlur.length > 0 ? zonaBlur : null
+        BackgroundEffect.blurRegion: root.usarBlur && !root.cambiando && root.regionesBlur.length > 0 ? zonaBlur : null
         property Region zonaBlur: Region { regions: root.regionesBlur }
         property Region zonaGrupo: Region { item: cargaGrupo.item; radius: 20 }
 
@@ -1094,13 +1234,14 @@ Scope {
             anchors.fill: parent
             focus: true
             Keys.onEscapePressed: {
-                if (root.catalogoAbierto) root.catalogoAbierto = false
+                if (root.dialogo !== "") root.dialogo = ""
+                else if (root.catalogoAbierto) root.catalogoAbierto = false
                 else if (root.grupoAbierto !== "") root.cerrarGrupo()
                 else if (root.panelClave !== "") root.panelClave = ""
-                else if (root.editando) root.salir(false)
+                else if (root.editando) root.pedirSalida()
             }
-            Keys.onReturnPressed: if (root.editando) root.salir(true)
-            Keys.onEnterPressed: if (root.editando) root.salir(true)
+            Keys.onReturnPressed: if (root.editando && root.dialogo === "") root.pedirSalida()
+            Keys.onEnterPressed: if (root.editando && root.dialogo === "") root.pedirSalida()
 
             // El panel de un grupo se cierra si el cursor se va a una ventana. Este detector vive en el
             // padre de todo: en un elemento de delante bloquearía el cursor de lo que hay debajo.
@@ -1176,6 +1317,8 @@ Scope {
                 id: capaElementos
                 anchors.fill: parent
                 z: root.arrastreElemento ? 180 : 0     // lo que se arrastra pasa por encima de los paneles
+                opacity: root.opacidadElementos         // fundido al cambiar de diseño
+                Behavior on opacity { NumberAnimation { duration: root.duracionFundido; easing.type: Easing.InOutQuad } }
                 Repeater {
                     id: repetidor
                     model: modelo
@@ -1212,7 +1355,7 @@ Scope {
                         anchors.verticalCenter: parent.verticalCenter
                         rightPadding: 12
                         Text {
-                            text: "Personalizar escritorio"
+                            text: "Personalizar escritorio · " + (root.tienePropio ? "diseño de este fondo" : "diseño general")
                             font.family: root.fuente
                             font.pixelSize: 13
                             font.bold: true
@@ -1230,12 +1373,12 @@ Scope {
                     }
 
                     Repeater {
-                        model: [
+                        model: (root.tienePropio ? [{ id: "general", texto: "Volver al general" }] : []).concat([
                             { id: "anadir", texto: "+ Añadir" },
                             { id: "restablecer", texto: "Restablecer" },
                             { id: "cancelar", texto: "Cancelar" },
                             { id: "listo", texto: "Listo", fuerte: true }
-                        ]
+                        ])
                         delegate: Rectangle {
                             id: boton
                             required property var modelData
@@ -1260,8 +1403,9 @@ Scope {
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
-                                    if (boton.modelData.id === "listo") root.salir(true)
-                                    else if (boton.modelData.id === "cancelar") root.salir(false)
+                                    if (boton.modelData.id === "listo") root.pedirSalida()
+                                    else if (boton.modelData.id === "cancelar") root.salir(false, "")
+                                    else if (boton.modelData.id === "general") root.dialogo = "borrarPropio"
                                     else if (boton.modelData.id === "anadir") {
                                         root.panelClave = ""
                                         root.cerrarGrupo()
@@ -1757,6 +1901,108 @@ Scope {
                 }
             }
 
+            // ---------- Diálogo: dónde guardar al salir, o confirmar que se borra el diseño propio ----------
+            Rectangle {
+                id: veloDialogo
+                anchors.fill: parent
+                z: 195
+                color: Qt.rgba(colores.surface.r, colores.surface.g, colores.surface.b, 0.55)
+                opacity: root.dialogo !== "" ? 1 : 0
+                visible: opacity > 0
+                Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                MouseArea { anchors.fill: parent; acceptedButtons: Qt.LeftButton | Qt.RightButton; onClicked: root.dialogo = "" }
+
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 440
+                    height: colDialogo.implicitHeight + 36
+                    radius: 22
+                    color: Qt.rgba(colores.surface.r, colores.surface.g, colores.surface.b, 0.98)
+                    border.color: Qt.rgba(colores.primary.r, colores.primary.g, colores.primary.b, 0.6)
+                    border.width: 1.5
+                    MouseArea { anchors.fill: parent; acceptedButtons: Qt.LeftButton | Qt.RightButton }
+
+                    Column {
+                        id: colDialogo
+                        x: 18
+                        y: 18
+                        width: parent.width - 36
+                        spacing: 8
+
+                        Text {
+                            width: parent.width
+                            wrapMode: Text.Wrap
+                            text: root.dialogo === "borrarPropio" ? "¿Volver al diseño general?" : "¿Dónde guardas este diseño?"
+                            font.family: root.fuente; font.pixelSize: 15; font.bold: true
+                            color: colores.surfaceText
+                        }
+                        Text {
+                            width: parent.width
+                            bottomPadding: 6
+                            wrapMode: Text.Wrap
+                            text: root.dialogo === "borrarPropio"
+                                ? "Se borrará para siempre el diseño propio de «" + root.nombreFondo + "». No se puede deshacer con Cancelar."
+                                : "Fondo actual: " + (root.nombreFondo || "ninguno")
+                            font.family: root.fuente; font.pixelSize: 11
+                            color: colores.surfaceText
+                            opacity: 0.8
+                        }
+
+                        Repeater {
+                            model: root.dialogo === "borrarPropio" ? [
+                                { id: "borrar", t: "Borrar y usar el general", d: "", peligro: true },
+                                { id: "seguir", t: "No borrar", d: "" }
+                            ] : (root.fondoActual !== "" ? [
+                                { id: "fondo", t: "Guardar solo para este fondo", d: "Los demás fondos no cambian.", fuerte: true }
+                            ] : []).concat([
+                                { id: "global", t: "Usar en todos los fondos", d: "Cambia el diseño general. Los fondos con diseño propio conservan el suyo." },
+                                { id: "descartar", t: "Descartar los cambios", d: "Todo vuelve a como estaba." },
+                                { id: "seguir", t: "Seguir editando", d: "" }
+                            ])
+                            delegate: Rectangle {
+                                id: opD
+                                required property var modelData
+                                width: colDialogo.width
+                                height: Math.max(40, colOp.implicitHeight + 16)
+                                radius: 12
+                                color: opD.modelData.fuerte ? (zonaOp.containsMouse ? Qt.lighter(colores.primary, 1.1) : colores.primary)
+                                    : opD.modelData.peligro ? (zonaOp.containsMouse ? "#ff6b6b" : "#e05555")
+                                    : Qt.rgba(colores.primary.r, colores.primary.g, colores.primary.b, zonaOp.containsMouse ? 0.25 : 0.1)
+                                Column {
+                                    id: colOp
+                                    x: 12
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: parent.width - 24
+                                    spacing: 1
+                                    Text {
+                                        width: parent.width
+                                        text: opD.modelData.t
+                                        font.family: root.fuente; font.pixelSize: 12; font.bold: true
+                                        color: opD.modelData.fuerte ? colores.primaryText : opD.modelData.peligro ? "white" : colores.surfaceText
+                                    }
+                                    Text {
+                                        width: parent.width
+                                        visible: opD.modelData.d !== ""
+                                        wrapMode: Text.Wrap
+                                        text: opD.modelData.d
+                                        font.family: root.fuente; font.pixelSize: 10
+                                        color: opD.modelData.fuerte ? colores.primaryText : colores.surfaceText
+                                        opacity: 0.8
+                                    }
+                                }
+                                MouseArea {
+                                    id: zonaOp
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.elegirDialogo(opD.modelData.id)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // ---------- Menú (crece desde donde se pidió) ----------
             Item {
                 id: capaMenu
@@ -1866,7 +2112,9 @@ Scope {
                             leftPadding: 6
                             rightPadding: 6
                             wrapMode: Text.Wrap
-                            text: cajaMenu.el && cajaMenu.el.fileName && !cajaMenu.el.fileName.endsWith(".desktop")
+                            text: cajaMenu.el && cajaMenu.el.escritorio
+                                ? "¿Borrar para siempre el diseño propio de este fondo y usar el general?"
+                                : cajaMenu.el && cajaMenu.el.fileName && !cajaMenu.el.fileName.endsWith(".desktop")
                                 ? "¿Mover a la papelera? El archivo se podrá recuperar desde ella."
                                 : "¿Quitar este acceso del escritorio? La app no se desinstala."
                             font.family: root.fuente
@@ -1880,7 +2128,7 @@ Scope {
                             x: 4
                             Repeater {
                                 model: [ { id: "no", texto: "Cancelar" },
-                                         { id: "si", texto: cajaMenu.el && cajaMenu.el.fileName && !cajaMenu.el.fileName.endsWith(".desktop") ? "Papelera" : "Quitar" } ]
+                                         { id: "si", texto: cajaMenu.el && cajaMenu.el.escritorio ? "Borrar" : cajaMenu.el && cajaMenu.el.fileName && !cajaMenu.el.fileName.endsWith(".desktop") ? "Papelera" : "Quitar" } ]
                                 delegate: Rectangle {
                                     id: bc
                                     required property var modelData
@@ -1917,14 +2165,15 @@ Scope {
         target: "escritorio"
         // Entra al modo edición; si ya está dentro, sale conservando (lo usa el atajo)
         function personalizar(): void { root.personalizar() }
-        function listo(): void { root.salir(true) }
-        function cancelar(): void { root.salir(false) }
+        function listo(): void { root.pedirSalida() }
+        function cancelar(): void { root.salir(false, "") }
+        function elegirDialogo(id: string): void { root.elegirDialogo(id) }
         function info(): string {
             return JSON.stringify({ editando: root.editando, seleccion: root.seleccion, columnas: root.columnas,
                                     filas: root.filas, ancho: ventana.width, alto: ventana.height, tapado: root.tapado,
                                     cobertura: root.cobertura, pausado: root.pausado, volverA: root.volverA,
                                     wsEdicion: root.wsEdicion, cambios: root.editando ? root.hayCambios() : false,
-                                    aviso: root.aviso, catalogo: root.catalogoAbierto, grupoAbierto: root.grupoAbierto, sitioGrupo: cargaGrupo.sitio, objetivo: root.objetivoGrupo, objetivoListo: root.objetivoListo, ocultos: root.ocultos, quitados: root.quitados, creados: root.creados, escribiendo: root.escribiendo, blur: root.usarBlur, regiones: root.regionesBlur.length, panel: root.panelClave, barra: root.claveBarra, sitioBarra: barraElemento.sitio, sitioPanel: cargaPanel.sitio,
+                                    aviso: root.aviso, fondo: root.fondoActual, cargadoPara: root.cargadoPara, propio: root.tienePropio, cambiando: root.cambiando, dialogo: root.dialogo, propios: Object.keys(root.datos.fondos || {}), catalogo: root.catalogoAbierto, grupoAbierto: root.grupoAbierto, sitioGrupo: cargaGrupo.sitio, objetivo: root.objetivoGrupo, objetivoListo: root.objetivoListo, ocultos: root.ocultos, quitados: root.quitados, creados: root.creados, escribiendo: root.escribiendo, blur: root.usarBlur, regiones: root.regionesBlur.length, panel: root.panelClave, barra: root.claveBarra, sitioBarra: barraElemento.sitio, sitioPanel: cargaPanel.sitio,
                                     sinHueco: root.sinHueco, elementos: root.instantanea() })
         }
         // Para probar sin mouse

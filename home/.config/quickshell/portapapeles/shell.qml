@@ -11,6 +11,13 @@ import QtQuick
 Scope {
     id: root
 
+    // Sin el aviso "Config reloaded": matugen recarga este módulo en cada cambio de fondo.
+    // Solo se oculta el de recarga correcta; el de error sigue saliendo.
+    Connections {
+        target: Quickshell
+        function onReloadCompleted() { Quickshell.inhibitReloadPopup() }
+    }
+
     property string fuente: "JetBrainsMono Nerd Font"
     property bool abierto: false
     property bool visibleVentana: false

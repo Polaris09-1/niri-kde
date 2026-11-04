@@ -11,6 +11,13 @@ import QtQuick
 ShellRoot {
     id: root
 
+    // Sin el aviso "Config reloaded": matugen recarga este módulo en cada cambio de fondo.
+    // Solo se oculta el de recarga correcta; el de error sigue saliendo.
+    Connections {
+        target: Quickshell
+        function onReloadCompleted() { Quickshell.inhibitReloadPopup() }
+    }
+
     // ===== Ajustes (versión discreta, 2026-11-01) =====
     property int mostrarMs: 1000          // cuánto se queda visible tras el último cambio
     property real pasoVolumen: 0.02       // igual que antes en niri (2 %)

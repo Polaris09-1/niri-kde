@@ -3,7 +3,7 @@
 Mi escritorio en **Arch Linux** con [niri](https://github.com/niri-wm/niri) (gestor de ventanas en
 columnas desplazables) y una interfaz propia hecha con [Quickshell](https://quickshell.org): barra
 superior en islas, dock, cajón de aplicaciones, portapapeles, galería de fondos con vídeo y
-transiciones, avisos, OSD y pantalla de bloqueo. Todo toma sus colores del fondo de pantalla con
+transiciones, escritorio personalizable con widgets, avisos, OSD y pantalla de bloqueo. Todo toma sus colores del fondo de pantalla con
 [matugen](https://github.com/InioX/matugen): la interfaz, las apps GTK y Qt/KDE, la terminal, niri y
 la pantalla de inicio de sesión.
 
@@ -19,7 +19,7 @@ Pensado para usarse **sin terminal**: casi todo tiene su panel.
 |---|---|
 | ![Bloqueo](capturas/bloqueo.jpg) | ![OSD](capturas/osd.png) |
 
-> Los fondos de las capturas no se incluyen en el repositorio (son de sus autores).
+> Los fondos de las capturas no se incluyen en el repositorio (son de sus autores). El clima, los recordatorios y el saludo muestran datos de ejemplo.
 
 ## Qué incluye
 
@@ -30,23 +30,30 @@ arranca niri:
 |---|---|
 | `hola` | Barra superior en islas: workspaces y ventana activa · hora (calendario + música) y campanita (avisos, No molestar) · bandeja y píldora de estado (wifi, bluetooth, audio, sistema, energía, capturas y grabación, modos de energía, luz nocturna y límite de carga). Los paneles crecen desde su botón. Es también el servidor de notificaciones. Con una ventana a pantalla completa se esconde como en macOS: baja al acercar el mouse al borde de arriba. |
 | `dock` | Dock flotante abajo, se oculta solo, efecto ola, puntito de apps abiertas, menú de clic derecho. |
-| `cajon` | Cajón de aplicaciones con buscador. |
+| `cajon` | Cajón de aplicaciones con buscador. Mantén pulsada una app y arrástrala para dejarla en el escritorio. |
 | `portapapeles` | Historial del portapapeles (texto e imágenes) estilo Win+V, que pega en la ventana anterior. |
-| `escritorio` | Iconos de `~/Desktop` y widgets (reloj, calendario, clima, recordatorios, música) sobre una cuadrícula; modo "Personalizar escritorio" (`Mod+Shift+D`) para moverlos, cambiar su tamaño, ajustar sus opciones, agrupar iconos y añadir apps. |
-| `galeria` | Galería de fondos (imágenes, vídeos y GIF): carrusel infinito con la tarjeta elegida grande y las demás como franjas verticales; el vídeo o GIF elegido se reproduce en la tarjeta y a pantalla completa antes de aplicarlo (decodificado en la GPU), con vista previa de la paleta. |
+| `escritorio` | Escritorio personalizable: widgets e iconos de `~/Desktop` sobre una cuadrícula, con un diseño propio por fondo si quieres (ver más abajo). |
+| `galeria` | Galería de fondos (imágenes, vídeos y GIF): carrusel infinito, ancho y centrado. Las tarjetas laterales son paralelogramos que pierden opacidad y nitidez con la distancia; la del centro se endereza y crece. El vídeo o GIF elegido se reproduce solo en ella (decodificado en la GPU), sobre la imagen fija difuminada. Debajo, el nombre, la paleta y una maqueta de la barra con esos colores. Todo con un único shader. |
 | `fondo` | Fondo de pantalla con transiciones por shader (círculo desde el clic, ola, barrido, fundido) y vídeo, que se pausa con ventanas maximizadas. |
 | `osd` | Aviso discreto de volumen, micrófono, brillo y Bloq Mayús. |
-| `bloqueo` | Pantalla de bloqueo (PAM) con música, avisos sin ver, batería y botones de energía; bloqueo automático por inactividad. |
+| `bloqueo` | Pantalla de bloqueo (PAM) con música, avisos sin ver, batería y botones de energía; bloqueo automático por inactividad, que no salta mientras algo se reproduce. |
 | `permisos` | Agente polkit: diálogo propio (en español) cuando una app pide la contraseña de administrador. |
 
 Además:
 
+- **Escritorio personalizable** (<kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> o clic derecho en un hueco): cuadrícula con arrastre y tamaños S, M y L, sin que nada se solape; con ventanas abiertas pasa a un workspace vacío y al salir vuelve.
+  - **Widgets**: reloj japonés, calendario, clima ([Open-Meteo](https://open-meteo.com), sin cuenta ni API key), recordatorios locales y música (MPRIS), en tarjetas translúcidas con el desenfoque de niri. Cada uno tiene sus opciones en un engranaje. Se detienen si una ventana tapa el escritorio.
+  - **Iconos**: cada archivo de `~/Desktop` se coloca por separado; uno nuevo va al primer hueco libre. Quitar un acceso directo no desinstala la app, y un archivo real va a la papelera tras confirmar.
+  - **Grupos** como en el celular: mantén un icono 0,5 s sobre otro para agruparlos; se abren en un panel flotante donde puedes renombrarlos y meter o sacar iconos.
+  - **Añadir**: selector con buscador de todas las apps instaladas (al escritorio o a un grupo) y catálogo de widgets.
+- **Diseños por fondo**: al salir del modo edición eliges entre guardar solo para ese fondo, usarlo en todos o descartar. Al cambiar de fondo se carga su diseño, o el general si no tiene, con un fundido. Se puede volver al general en cualquier momento.
+- **Inactividad y cafeína**: no se atenúa, bloquea ni suspende mientras un programa pide evitarlo, un reproductor está en marcha (MPRIS) o sale audio (PipeWire); sirve también para los vídeos con DRM, en ventana o a pantalla completa. Al pausar, el contador vuelve a correr. Además, la tarjeta **Mantener despierto** del panel activa una cafeína manual, con una taza en la barra que la apaga con un clic.
 - **Pantalla completa como en macOS**: al poner una ventana a pantalla completa (F11, la F de YouTube o <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>) la barra sube y deja todo el espacio a la ventana; baja encima al acercar el mouse al borde de arriba (con sus paneles) y el dock aparece desde el borde de abajo. Mientras dura, los avisos normales van directo al historial; los urgentes, el OSD, el portapapeles y el bloqueo siguen saliendo encima. Se detecta por monitor con el `event-stream` de niri.
 - **Energía**: modos Ahorro / Equilibrado / Rendimiento (power-profiles-daemon) en el panel; **luz nocturna** con wlsunset que se enciende sola al ponerse el sol (o siempre), con su calidez ajustable y vista previa; **límite de carga al 80 %** con UPower (sin sudo ni contraseña: polkit lo permite al usuario de la sesión), con la salud de la batería. Pon tu latitud/longitud en `~/.config/quickshell/hola/luz-nocturna.json` (en el repo vienen en 0,0).
 - **Terminal**: prompt de [starship](https://starship.rs) en píldoras redondeadas como la barra y [fastfetch](https://github.com/fastfetch-cli/fastfetch) en español, los dos con los colores del fondo (plantillas de matugen). fastfetch sale solo en la primera terminal de la sesión (luego, escribiendo `fastfetch`); nunca por SSH ni dentro de herramientas como Claude Code o VS Code. Alacritty usa JetBrainsMono Nerd Font. `install.sh` añade una línea a `~/.bashrc` que carga `~/.config/bash/escritorio.sh`.
 - **niri**: animaciones propias sin rebote (abrir/cerrar con shader), sombras y borde con los colores del fondo.
 - **matugen**: plantillas para Quickshell, niri, alacritty, fuzzel, swaylock, GTK 3/4 (adw-gtk3), Qt (qt5ct/qt6ct), KDE (`kdeglobals`) y SDDM.
-- **Scripts** en `~/.local/bin`: `wallpaper.sh` (pone el fondo y regenera los colores), `fondo-fotograma.sh`, `fondo-arrancar.sh` (arranca el fondo con decodificación por hardware si puede), `fondo-optimizar.sh` (copia del vídeo a tamaño de pantalla), `aplicar-colores-apps.sh` y `bloquear.sh`.
+- **Scripts** en `~/.local/bin`: `wallpaper.sh` (pone el fondo y regenera los colores), `fondo-fotograma.sh`, `fondo-arrancar.sh` (arranca el fondo con decodificación por hardware si puede), `fondo-optimizar.sh` (copia del vídeo a tamaño de pantalla), `fondo-login.sh` (pasa el fondo a la pantalla de inicio de sesión, aunque cambies de fondo o apagues enseguida), `aplicar-colores-apps.sh` y `bloquear.sh`.
 - **SDDM**: tema [sddm-astronaut](https://github.com/Keyitdev/sddm-astronaut-theme) con un diseño propio (`Tarjeta.qml`) igual a la pantalla de bloqueo de Quickshell: tarjeta centrada translúcida, fondo actual (fotograma si es vídeo) difuminado, colores de matugen, fecha en español, campos de usuario y contraseña en pastilla, contador de intentos fallidos (5 → espera 2 min), selección de sesión y energía con cuenta atrás. Se guarda solo el parche, no el tema entero; para volver al diseño original: `MainScript=Main.qml` en `metadata.desktop`.
 
 ## Instalación
@@ -75,6 +82,7 @@ Después:
 2. Copia imágenes o vídeos a `~/Pictures/wallpapers/`.
 3. Cierra sesión, elige **niri** en SDDM y entra.
 4. Abre la galería con <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>W</kbd> y elige un fondo: matugen pintará todo con sus colores.
+5. Pulsa <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> para colocar tu escritorio. Si añades el clima, elige tu ciudad en su engranaje: el repositorio no trae ninguna.
 
 ## Atajos
 
@@ -86,6 +94,7 @@ Después:
 |---|---|
 | <kbd>Super</kbd>+<kbd>A</kbd> | Cajón de aplicaciones |
 | <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>W</kbd> | Galería de fondos |
+| <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> | Personalizar el escritorio |
 | <kbd>Super</kbd>+<kbd>V</kbd> | Historial del portapapeles (pega al elegir) |
 | <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> | Panel de capturas |
 | <kbd>Impr</kbd> · <kbd>Ctrl</kbd>+<kbd>Impr</kbd> · <kbd>Alt</kbd>+<kbd>Impr</kbd> | Captura de área · pantalla · ventana |
@@ -133,6 +142,10 @@ git push
 ejecuta [`revisar-privacidad.sh`](revisar-privacidad.sh), que busca llaves, tokens, correos,
 direcciones MAC/IP, tu ruta personal, el nombre del equipo y **los nombres de tus redes Wi-Fi
 guardadas**. Si avisa de algo, corrígelo antes de hacer `git push`.
+
+Del escritorio **no se suben** tus recordatorios, la ciudad del clima, los nombres de tus archivos y
+grupos ni el nombre del saludo. Sí se suben los widgets, su posición y los nombres de los fondos que
+tengan un diseño propio.
 
 ## Estructura
 

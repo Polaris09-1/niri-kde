@@ -57,6 +57,13 @@ for privado in clima-ciudad.json recordatorios.json; do
         grave=1
     fi
 done
+# fastfetch: sin usuario, equipo, IP ni red en lo que sale en las capturas
+for ff in home/.config/fastfetch/config.jsonc home/.config/matugen/templates/fastfetch.jsonc; do
+    if [ -f "$ff" ] && grep -nE '"(title|localip|publicip|wifi|users)" *(,|\}|$)|user-name|host-name' "$ff"; then
+        echo "-- $ff muestra usuario, equipo, IP o red (líneas de arriba)"
+        grave=1
+    fi
+done
 # Nombre del equipo
 buscarLiteral "Nombre del equipo" "$(cat /etc/hostname 2>/dev/null)"
 

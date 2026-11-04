@@ -217,7 +217,7 @@ Item {
 
                 Item {
                     width: parent.width
-                    height: 36
+                    height: errorGrab.visible ? Math.max(36, errorGrab.implicitHeight) : 36
                     Row {
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: 8
@@ -244,6 +244,7 @@ Item {
                         }
                     }
                     Text {
+                        id: errorGrab
                         visible: !c.grabadora.grabando && c.grabadora.error !== ""
                         anchors.verticalCenter: parent.verticalCenter
                         width: parent.width - btnGrab.width - 10

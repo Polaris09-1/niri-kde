@@ -1362,6 +1362,8 @@ Scope {
                             color: colores.surfaceText
                         }
                         Text {
+                            width: Math.min(implicitWidth, 560)
+                            elide: Text.ElideRight
                             text: root.aviso !== "" ? root.aviso
                                 : root.sinHueco.length > 0 ? root.sinHueco.length + " sin hueco: libera espacio para verlos"
                                 : "Arrastra para mover · S M L y ⚙ al pasar el cursor"
@@ -1813,8 +1815,10 @@ Scope {
                                 radius: 12
                                 color: Qt.rgba(colores.primary.r, colores.primary.g, colores.primary.b, zonaApp.containsMouse && !ca.puesta ? 0.22 : 0)
                             }
+                            // Arriba fija (no centrada): un nombre en dos líneas no desalinea el icono
                             Column {
-                                anchors.centerIn: parent
+                                x: 6
+                                y: 18
                                 width: parent.width - 12
                                 spacing: 4
                                 opacity: ca.puesta ? 0.45 : 1
@@ -1829,6 +1833,8 @@ Scope {
                                 Text {
                                     width: parent.width
                                     horizontalAlignment: Text.AlignHCenter
+                                    wrapMode: Text.Wrap
+                                    maximumLineCount: 2
                                     elide: Text.ElideRight
                                     text: ca.modelData.name
                                     font.family: root.fuente; font.pixelSize: 10

@@ -400,6 +400,8 @@ Item {
                 }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
+                    width: Math.min(implicitWidth, columna.width - 52)
+                    elide: Text.ElideRight
                     text: p.s.usuario
                     font.family: p.fuente
                     font.pixelSize: 15
@@ -532,6 +534,7 @@ Item {
                     visible: p.vistaPrevia && p.s.mensajeVista !== ""
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
                     text: p.s.mensajeVista
                     font.family: p.fuente
                     font.pixelSize: 12

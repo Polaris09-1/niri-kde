@@ -322,6 +322,8 @@ ShellRoot {
                                 }
                                 Text {
                                     anchors.verticalCenter: parent.verticalCenter
+                                    width: Math.min(implicitWidth, chip.parent ? chip.parent.width - 48 : 300)
+                                    elide: Text.ElideRight
                                     text: chip.modelData.displayName || chip.modelData.string || ("uid " + chip.modelData.id)
                                     font.family: root.fuente
                                     font.pixelSize: 12

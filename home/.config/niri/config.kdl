@@ -368,7 +368,8 @@ binds {
     Mod+Shift+Slash { show-hotkey-overlay; }
 
     // Suggested binds for running programs: terminal, app launcher, screen locker.
-    Mod+T hotkey-overlay-title="Open a Terminal: alacritty" { spawn "alacritty"; }
+    // ESCRITORIO_TERMINAL: fastfetch solo sale en terminales abiertas por ti (ver ~/.config/bash/escritorio.sh)
+    Mod+T hotkey-overlay-title="Open a Terminal: alacritty" { spawn "env" "ESCRITORIO_TERMINAL=1" "alacritty"; }
     Mod+D hotkey-overlay-title="Run an Application: fuzzel" { spawn "fuzzel"; }
     // Bloqueo propio (2026-11-01, puntos 2+7): módulo Quickshell "bloqueo" (swaylock si no corre)
     Super+Alt+L hotkey-overlay-title="Bloquear la pantalla" { spawn "@HOME@/.local/bin/bloquear.sh"; }

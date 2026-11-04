@@ -23,3 +23,4 @@
 .local/bin/fondo-arrancar.sh
 .local/bin/fondo-optimizar.sh
 .local/share/dbus-1/services/fr.emersion.mako.service
+.local/share/applications/Alacritty.desktop

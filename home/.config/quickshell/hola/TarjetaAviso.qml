@@ -208,6 +208,7 @@ Rectangle {
                     required property int index
                     tema: t.tema
                     texto: modelData.texto
+                    anchoMax: col.width
                     lleno: index === 0
                     height: 28
                     onClic: t.accion(modelData.id)

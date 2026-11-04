@@ -93,7 +93,7 @@ TarjetaWidget {
             id: fila
             required property var modelData
             width: vista.width
-            height: 28
+            height: Math.max(28, textoFila.implicitHeight + 8)
             readonly property bool confirmar: w.confirmando === fila.modelData.id
 
             Rectangle {
@@ -119,11 +119,14 @@ TarjetaWidget {
                 }
             }
             Text {
+                id: textoFila
                 anchors.left: casilla.right
                 anchors.leftMargin: 8
                 anchors.right: botonBorrar.left
                 anchors.rightMargin: 4
                 anchors.verticalCenter: parent.verticalCenter
+                wrapMode: Text.Wrap
+                maximumLineCount: 3
                 elide: Text.ElideRight
                 text: fila.modelData.texto
                 font.family: w.fuente; font.pixelSize: 12

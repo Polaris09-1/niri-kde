@@ -113,7 +113,8 @@ Scope {
 
     function bonito(nombre) {
         // Sin la marca de la web de descarga al final ("-moewalls-com")
-        return nombre.replace(/(-mp4)?[-_]+\w+[-_]com$/i, "").replace(/[-_]+/g, " ").replace(/\b\w/g, l => l.toUpperCase())
+        return nombre.replace(/(-mp4)?[-_]+\w+[-_]com$/i, "").replace(/[-_]+/g, " ")
+            .split(" ").map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ")
     }
 
     // ===== Atajo: qs -c galeria ipc call galeria toggle =====

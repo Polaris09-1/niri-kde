@@ -221,6 +221,8 @@ Item {
                 }
                 Text {
                     visible: !!(e.limite && e.limite.salud >= 0)
+                    width: parent.width
+                    wrapMode: Text.WordWrap
                     text: "Salud de la batería: " + (e.limite ? e.limite.salud : 0) + " % de su capacidad original"
                     font.family: e.s.fuente
                     font.pixelSize: 10
@@ -242,15 +244,20 @@ Item {
         Rectangle {
             visible: e.pendiente !== ""
             width: parent.width
-            height: 92
+            height: colConfirmar.implicitHeight + 28
             radius: 16
             color: e.pendiente === "salir" ? e.s.alfa(e.tema.primary, 0.12) : Qt.rgba(1, 0.33, 0.33, 0.15)
 
             Column {
-                anchors.centerIn: parent
+                id: colConfirmar
+                x: 16
+                y: 14
+                width: parent.width - 32
                 spacing: 10
                 Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.Wrap
                     text: e.textoConfirmar()
                     font.family: e.s.fuente
                     font.pixelSize: 13

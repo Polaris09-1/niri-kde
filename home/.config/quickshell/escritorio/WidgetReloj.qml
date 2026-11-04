@@ -168,6 +168,8 @@ Item {
             Text {
                 visible: w.conFecha
                 anchors.right: parent.right
+                width: Math.min(implicitWidth, w.width - 28)
+                elide: Text.ElideRight
                 text: w.fechaLarga()
                 font.family: w.fuente
                 font.weight: Font.Light
@@ -179,6 +181,8 @@ Item {
             Text {
                 visible: w.conSaludo
                 anchors.right: parent.right
+                width: Math.min(implicitWidth, w.width - 28)
+                elide: Text.ElideRight
                 text: w.textoSaludo()
                 font.family: w.fuente
                 font.italic: true

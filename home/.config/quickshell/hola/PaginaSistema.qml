@@ -233,6 +233,8 @@ Item {
                                 color: p.tema.surfaceText
                             }
                             Text {
+                                width: parent.width
+                                elide: Text.ElideRight
                                 text: "PID " + fp.modelData.pid + (fp.modelData.usuario !== p.usuario ? " · " + fp.modelData.usuario : "")
                                 font.family: p.s.fuente
                                 font.pixelSize: 9

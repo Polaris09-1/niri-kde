@@ -53,10 +53,10 @@ index 28d8c51..0c9928c 100644
                          opacity: 1
 diff --git a/Tarjeta.qml b/Tarjeta.qml
 new file mode 100644
-index 0000000..eda58d5
+index 0000000..44067d1
 --- /dev/null
 +++ b/Tarjeta.qml
-@@ -0,0 +1,749 @@
+@@ -0,0 +1,755 @@
 +// Tarjeta.qml — login de SDDM con el mismo diseño que la pantalla de bloqueo de Quickshell
 +// (~/.config/quickshell/bloqueo/Pantalla.qml, 2026-11-01): fondo casi nítido, tarjeta centrada
 +// translúcida con el fondo muy difuminado detrás, hora, fecha en español, avatar con la inicial,
@@ -292,6 +292,8 @@ index 0000000..eda58d5
 +        }
 +        Text {
 +            anchors.verticalCenter: parent.verticalCenter
++            width: Math.min(implicitWidth, 240)
++            elide: Text.ElideRight
 +            text: sddm.hostName
 +            font.family: p.fuente
 +            font.pixelSize: 12
@@ -400,6 +402,8 @@ index 0000000..eda58d5
 +                }
 +                Text {
 +                    anchors.verticalCenter: parent.verticalCenter
++                    width: Math.min(implicitWidth, columna.width - 52)
++                    elide: Text.ElideRight
 +                    text: p.usuario !== "" ? p.nombreVisible : "¿Quién eres?"
 +                    font.family: p.fuente
 +                    font.pixelSize: 15
@@ -712,6 +716,8 @@ index 0000000..eda58d5
 +                    }
 +                    Text {
 +                        anchors.verticalCenter: parent.verticalCenter
++                        width: Math.min(implicitWidth, columna.width - 90)
++                        elide: Text.ElideRight
 +                        text: p.nombresSesion[p.sesion] || "Sesión"
 +                        font.family: p.fuente
 +                        font.pixelSize: 12

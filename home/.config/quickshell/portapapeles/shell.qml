@@ -301,6 +301,7 @@ Scope {
                         }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
+                            visible: !root.confirmarBorrar   // deja sitio a la pregunta
                             text: root.items.length > 0 ? root.items.length + " elementos" : ""
                             font.family: root.fuente
                             font.pixelSize: 11
@@ -501,8 +502,12 @@ Scope {
                 // Vacío
                 Text {
                     anchors.centerIn: parent
+                    width: parent.width - 40
                     visible: root.filtrados.length === 0
                     horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 4
+                    elide: Text.ElideRight
                     text: root.items.length === 0 ? (pLista.running ? "Cargando…" : "Aún no hay nada.\nCopia algo (Ctrl+C) y aparecerá aquí.")
                         : "Nada coincide con «" + root.filtro + "»"
                     font.family: root.fuente

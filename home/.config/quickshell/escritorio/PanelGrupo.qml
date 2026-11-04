@@ -53,6 +53,7 @@ Rectangle {
             anchors.rightMargin: 10
             verticalAlignment: TextInput.AlignVCenter
             clip: true
+            autoScroll: activeFocus   // sin foco se ve el principio del nombre, no el final
             maximumLength: 30
             selectByMouse: true
             font.family: p.fuente; font.pixelSize: 13; font.bold: true

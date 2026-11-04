@@ -242,8 +242,10 @@ Scope {
                         Behavior on opacity { NumberAnimation { duration: 150 } }
                     }
 
+                    // Arriba fija (no centrada): un nombre en dos líneas no desalinea el icono
                     Column {
-                        anchors.centerIn: parent
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        y: 25
                         spacing: 8
                         scale: (zona.containsMouse || celda.elegida) ? 1.1 : 1
                         Behavior on scale {
@@ -262,6 +264,8 @@ Scope {
                         Text {
                             width: grilla.cellWidth - 16
                             horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.Wrap
+                            maximumLineCount: 2
                             elide: Text.ElideRight
                             color: tema.surfaceText
                             font.pixelSize: 13

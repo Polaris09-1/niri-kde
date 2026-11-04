@@ -556,6 +556,8 @@ Scope {
                                 Text {
                                     id: etiqueta
                                     anchors.centerIn: parent
+                                    width: Math.min(implicitWidth, 240)
+                                    elide: Text.ElideRight
                                     text: ic.modelData.name
                                     color: tema.primaryText
                                     font.pixelSize: 11

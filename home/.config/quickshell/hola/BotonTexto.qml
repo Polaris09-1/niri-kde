@@ -9,9 +9,10 @@ Rectangle {
     property string texto: ""
     property bool lleno: false
     property bool peligro: false
+    property real anchoMax: 100000   // con un texto largo (p. ej. acciones de un aviso) recorta con "…"
     signal clic()
 
-    width: txt.implicitWidth + 24
+    width: txt.width + 24
     height: 32
     radius: 12
     color: bt.peligro ? (ma.containsMouse ? "#ff6b6b" : "#e05555")
@@ -28,6 +29,8 @@ Rectangle {
     Text {
         id: txt
         anchors.centerIn: parent
+        width: Math.min(implicitWidth, Math.max(0, bt.anchoMax - 24))
+        elide: Text.ElideRight
         text: bt.texto
         font.family: bt.fuente
         font.pixelSize: 12

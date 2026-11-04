@@ -312,7 +312,8 @@ ShellRoot {
     // Lo que no vive en ajustes.json: va a su dueño (PipeWire, hola, bloqueo, NetworkManager, BlueZ)
     function deshacerExterno(a) {
         var hola = ["qs", "-c", "hola", "ipc", "call", "hola"]
-        if (a.clave === "ext.brillo") root.ejecutar(["brightnessctl", "-q", "set", a.antes + "%"])
+        if (a.clave === "ext.espejo") root.ejecutar([root.scriptEspejo, "poner"].concat(a.antes ? [a.antes.origen, a.antes.destino] : ["-"]))
+        else if (a.clave === "ext.brillo") root.ejecutar(["brightnessctl", "-q", "set", a.antes + "%"])
         else if (a.clave === "ext.luzModo") root.ejecutar(hola.concat(["luzNocturna", a.antes]))
         else if (a.clave === "ext.luzTemp") root.ejecutar(hola.concat(["temperaturaNocturna", String(a.antes)]))
         else if (a.clave === "ext.luzUbic") root.ejecutar(hola.concat(["ubicacionNocturna", String(a.lat), String(a.lon)]))
@@ -347,6 +348,39 @@ ShellRoot {
         ops.forEach(o => { l = l.concat(["@", o.salida], o[campo]) })
         return l
     }
+    // Uso de los monitores: reflejar lo lleva espejo.sh, que tiene su propio vigilante. El estado sale de su archivo,
+    // que solo existe mientras dura. { origen, destino } o null
+    readonly property string scriptEspejo: Quickshell.env("HOME") + "/.local/bin/espejo.sh"
+    property var espejoReal: null
+    property var espejoSimulado: null
+    readonly property var espejo: root.salidasSimuladas ? root.espejoSimulado : root.espejoReal
+    FileView {
+        path: Quickshell.env("XDG_RUNTIME_DIR") + "/espejo-activo.json"
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: {
+            try {
+                var d = JSON.parse(text())
+                root.espejoReal = { origen: d.origen, destino: d.destino }
+            } catch (e) { root.espejoReal = null }
+        }
+        onLoadFailed: root.espejoReal = null
+    }
+    function probarEspejo(nuevo, titulo) {
+        if (root.pantalla || pPantalla.running) return
+        var p = { ops: [], titulo: titulo, espejo: { nuevo: nuevo, antes: root.espejo } }
+        if (root.salidasSimuladas) {
+            root.espejoSimulado = nuevo
+            root.pantalla = p
+            root.cuentaPantalla = 15
+            relojPantalla.restart()
+            return
+        }
+        pPantalla.previsto = p
+        pPantalla.command = [root.scriptEspejo, "probar"].concat(nuevo ? ["iniciar", nuevo.origen, nuevo.destino] : ["parar"])
+        pPantalla.running = true
+    }
     function probarPantalla(ops, titulo) {
         if (root.pantalla || pPantalla.running) return
         if (root.salidasSimuladas) {
@@ -370,7 +404,8 @@ ShellRoot {
                     root.pantalla = pPantalla.previsto
                     root.cuentaPantalla = 15
                     relojPantalla.restart()
-                } else root.avisar("niri no aceptó ese cambio: " + (pPantalla.salidaTexto.trim() || ("error " + code)), true)
+                } else root.avisar((pPantalla.previsto.espejo ? "No se pudo cambiar el uso de los monitores: " : "niri no aceptó ese cambio: ")
+                    + (pPantalla.salidaTexto.trim() || ("error " + code)), true)
                 root.pantallaResuelta()
             })
         }
@@ -387,7 +422,10 @@ ShellRoot {
     function revertirPantalla() {
         if (!root.pantalla) return
         relojPantalla.stop()
-        if (!root.salidasSimuladas) root.ejecutar([root.scriptPantalla, "revertir"].concat(root.listaOps(root.pantalla.ops, "volver")))
+        if (root.pantalla.espejo) {
+            if (root.salidasSimuladas) root.espejoSimulado = root.pantalla.espejo.antes
+            else root.ejecutar([root.scriptEspejo, "revertir"])
+        } else if (!root.salidasSimuladas) root.ejecutar([root.scriptPantalla, "revertir"].concat(root.listaOps(root.pantalla.ops, "volver")))
         root.avisar("Se volvió a la configuración anterior de la pantalla.", false)
         root.pantalla = null
         resolverLuego.restart()
@@ -403,6 +441,12 @@ ShellRoot {
                 var r = p.ops.find(x => x.salida === o.name && x.clave === "position")
                 return r ? Object.assign({}, o, { logical: Object.assign({}, o.logical, { x: r.valor[0], y: r.valor[1] }) }) : o
             })
+            return
+        }
+        if (p.espejo) {
+            root.ejecutar([root.scriptEspejo, "conservar"])
+            root.registrar(p.titulo, [{ clave: "ext.espejo", antes: p.espejo.antes }])
+            resolverLuego.restart()
             return
         }
         root.ejecutar([root.scriptPantalla, "conservar"])
@@ -1095,6 +1139,7 @@ ShellRoot {
         function kdl(): string { return root.generarKdl(root.estado) }
         function pantallaEstado(): string { return JSON.stringify({ pendiente: root.pantalla, cuenta: root.cuentaPantalla }) }
         function conservar(): void { root.conservarPantalla() }
+        function usoEstado(): string { return JSON.stringify({ espejo: root.espejo, pendiente: !!root.pantalla, cuenta: root.cuentaPantalla, titulo: root.pantalla ? root.pantalla.titulo : "" }) }
         function revertir(): void { root.revertirPantalla() }
         function probarEscala(salida: string, id: string, v: real, antes: real): void {
             root.probarPantalla([{ salida: salida, id: id, clave: "scale", valor: v, args: ["scale", String(v)], volver: ["scale", String(antes)] }], "Escala de " + salida + ": " + v)

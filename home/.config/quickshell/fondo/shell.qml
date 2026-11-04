@@ -227,7 +227,7 @@ Scope {
     // ===== Un fondo completo por monitor: cada uno con su transición, su vídeo y su pausa =====
     Variants {
         id: pantallas
-        model: Quickshell.screens
+        model: Principal.pantallas
         delegate: Scope {
             id: mon
             required property var modelData

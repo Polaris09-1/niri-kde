@@ -102,6 +102,7 @@ QtObject {
           t: "Suspender con batería tras", a: "Enchufado no se suspende solo.", p: "dormir reposo" },
 
         // ---------- Pantalla (la pinta SeccionPantalla.qml) ----------
+        { id: "pantalla.uso", s: "pantalla", tipo: "libre", t: "Uso de los monitores", p: "extender reflejar espejo duplicar proyector" },
         { id: "pantalla.orden", s: "pantalla", tipo: "libre", t: "Ordenar monitores", p: "arrastrar posicion izquierda derecha arriba externo hdmi displayport usb" },
         { id: "pantalla.monitores", s: "pantalla", tipo: "libre", t: "Resolución, frecuencia y escala", p: "monitor salida orientacion rotacion girar hz vrr hdmi principal activar desactivar" },
         { id: "pantalla.brillo", s: "pantalla", tipo: "libre", t: "Brillo", p: "luz pantalla" },

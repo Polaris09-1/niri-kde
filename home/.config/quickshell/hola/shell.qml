@@ -513,6 +513,8 @@ Scope {
                     var n = [d[k].make, d[k].model].filter(x => x && x !== "Unknown").join(" ")
                     ahora[k] = n || (/^Virtual/i.test(k) ? "Monitor virtual" : k)
                 })
+                // Reflejar otra vez lo que estaba reflejado (no hace nada si no hay modo recordado o ya corre)
+                root.ejecutar([Quickshell.env("HOME") + "/.local/bin/espejo.sh", "reanudar"])
                 var antes = root.monitores
                 root.monitores = ahora
                 if (!antes) return
@@ -950,7 +952,7 @@ Scope {
     // Dentro de Variants no hace falta Principal.lista: cada pantalla crea y destruye sus propias ventanas.
     Variants {
         id: barras
-        model: Quickshell.screens
+        model: Principal.pantallas
         delegate: Scope {
             id: barra
             required property var modelData

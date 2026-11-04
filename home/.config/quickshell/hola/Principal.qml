@@ -11,7 +11,7 @@ import Quickshell.Io
 // Orden: el monitor principal de Ajustes, la pantalla del portátil, la primera encendida.
 // Lo que se abre "donde estás" (cajón, portapapeles, galería, OSD) pregunta con pedirEnfocada() y usa
 // `screen: Principal.porNombre(salida) || Principal.pantalla`. Lo que va en todos los monitores (fondo, dock) usa
-// Variants con Quickshell.screens: no necesita `lista`, porque cada pantalla crea y destruye sus propias ventanas.
+// Variants con Principal.pantallas: no necesita `lista`, porque cada pantalla crea y destruye sus propias ventanas.
 // Enlace simbólico en cada módulo, como Colors.qml.
 Singleton {
     id: p
@@ -39,12 +39,29 @@ Singleton {
         if (p.elegida === s.name) return true
         return !!s.model && s.model !== "Unknown" && p.elegida.indexOf(s.model) >= 0
     }
+    // Monitor reflejado por el módulo `espejo`: nada se dibuja ni se abre en él. El archivo solo existe mientras dura.
+    // bloqueo no usa esta lista: la pantalla de bloqueo tiene que tapar todos los monitores.
+    property string reflejado: ""
+    FileView {
+        path: Quickshell.env("XDG_RUNTIME_DIR") + "/espejo-activo.json"
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: {
+            try { p.reflejado = JSON.parse(text()).destino || "" } catch (e) { p.reflejado = "" }
+        }
+        onLoadFailed: p.reflejado = ""
+    }
+    readonly property var pantallas: {
+        var l = Quickshell.screens.filter(s => s.name !== p.reflejado)
+        return l.length > 0 ? l : Quickshell.screens
+    }
     readonly property var pantalla: {
-        var l = Quickshell.screens
+        var l = p.pantallas
         return l.find(s => p.coincide(s)) || l.find(s => /^eDP/.test(s.name)) || l[0] || null
     }
 
-    function porNombre(nombre) { return Quickshell.screens.find(s => s.name === nombre) || null }
+    function porNombre(nombre) { return p.pantallas.find(s => s.name === nombre) || null }
 
     // Pregunta a niri por el monitor enfocado y llama a alResponder(nombre); "" si no lo sabe
     property var pendientes: []

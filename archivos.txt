@@ -29,6 +29,7 @@
 .local/bin/ajustes-respaldo.sh
 .local/bin/ajustes-pantalla.sh
 .local/bin/ajustes-monitor-aviso.sh
+.local/bin/espejo.sh
 .local/share/dbus-1/services/fr.emersion.mako.service
 .local/share/applications/Alacritty.desktop
 .local/share/applications/niri-ajustes.desktop

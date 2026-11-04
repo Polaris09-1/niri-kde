@@ -103,14 +103,44 @@ Column {
     }
     // Colocar varios a la vez, con una sola confirmación
     function ordenar(rects) {
+        if (c.espejo) { c.raiz.avisar("Mientras se refleja no se pueden ordenar los monitores.", true); return }
+        // A todos, aunque no cambien: si uno se queda sin posición explícita, niri lo recoloca a la derecha de los demás
         var ops = []
+        var cambia = false
         rects.forEach(r => {
             var o = c.salidas.find(x => x.name === r.n)
-            if (!o || !o.logical || (o.logical.x === r.x && o.logical.y === r.y)) return
+            if (!o || !o.logical) return
+            if (o.logical.x !== r.x || o.logical.y !== r.y) cambia = true
             ops.push(c.op(o, "position", [r.x, r.y], ["position", "set", String(r.x), String(r.y)],
                 ["position", "set", String(o.logical.x), String(o.logical.y)]))
         })
-        if (ops.length) c.raiz.probarPantalla(ops, "Orden de los monitores")
+        if (cambia) c.raiz.probarPantalla(ops, "Orden de los monitores")
+    }
+
+    // ===== Uso: extender o reflejar =====
+    readonly property var espejo: c.raiz.espejo
+    function esReflejado(o) { return !!c.espejo && o.name === c.espejo.destino }
+    // El que no es el reflejado: el reflejado está lejos y no es parte del escritorio
+    readonly property var enMapa: c.salidas.filter(o => !!o.logical && !c.esReflejado(o))
+    readonly property var conImagen: c.salidas.filter(o => !!o.logical)
+    function nombreDeConector(n) {
+        var o = c.salidas.find(x => x.name === n)
+        return o ? c.nombreDe(o) : n
+    }
+    function reflejar(origen, destino) {
+        c.raiz.probarEspejo({ origen: origen, destino: destino }, "Reflejar " + c.nombreDeConector(origen) + " en " + c.nombreDeConector(destino))
+    }
+    function reflejarPorDefecto() {
+        var l = c.conImagen
+        var o = l.find(x => x.id === c.principal) || l.find(x => /^eDP/.test(x.name)) || l[0]
+        var d = l.find(x => x.name !== o.name)
+        if (o && d) c.reflejar(o.name, d.name)
+    }
+    function extender() { c.raiz.probarEspejo(null, "Extender el escritorio") }
+    // Elegir otro para mostrar: si era el reflejado, se cambian de papel
+    function mostrar(n) {
+        if (!c.espejo || n === c.espejo.origen) return
+        c.reflejar(n, n === c.espejo.destino ? c.espejo.origen : c.espejo.destino)
     }
     readonly property string principal: c.raiz.valor("niri.principal") || ""
 
@@ -126,6 +156,70 @@ Column {
         color: c.raiz.alfa(c.raiz.tema.surfaceText, 0.7)
     }
 
+    Etiqueta { visible: c.conImagen.length > 1; s: c.raiz; tema: c.raiz.tema; texto: "Uso" }
+    Ancla {
+        visible: c.conImagen.length > 1
+        raiz: c.raiz
+        opId: "pantalla.uso"
+        Lista {
+            Chip {
+                s: c.raiz; tema: c.raiz.tema
+                texto: "Extender"
+                elegido: !c.espejo
+                onClic: if (!elegido) c.extender()
+            }
+            Chip {
+                s: c.raiz; tema: c.raiz.tema
+                texto: "Reflejar"
+                elegido: !!c.espejo
+                onClic: if (!elegido) c.reflejarPorDefecto()
+            }
+        }
+        Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            textFormat: Text.PlainText
+            text: c.espejo
+                ? c.nombreDeConector(c.espejo.destino) + " muestra lo mismo que " + c.nombreDeConector(c.espejo.origen) + ". Si la forma es distinta, se ve entera con franjas negras."
+                : "Cada monitor tiene su propio escritorio. Al reflejar, las ventanas del monitor reflejado pasan al otro y no vuelven solas."
+            font.family: c.raiz.fuente
+            font.pixelSize: 10
+            color: c.raiz.alfa(c.raiz.tema.surfaceText, 0.62)
+        }
+        Column {
+            visible: !!c.espejo
+            width: parent.width
+            spacing: 8
+            Rotulo { text: "Monitor que se muestra" }
+            Lista {
+                Repeater {
+                    model: c.conImagen
+                    delegate: Chip {
+                        required property var modelData
+                        s: c.raiz; tema: c.raiz.tema
+                        texto: c.nombreDe(modelData)
+                        elegido: !!c.espejo && c.espejo.origen === modelData.name
+                        onClic: if (!elegido) c.mostrar(modelData.name)
+                    }
+                }
+            }
+            Rotulo { visible: c.conImagen.length > 2; text: "Reflejar en" }
+            Lista {
+                visible: c.conImagen.length > 2
+                Repeater {
+                    model: c.conImagen.filter(o => !!c.espejo && o.name !== c.espejo.origen)
+                    delegate: Chip {
+                        required property var modelData
+                        s: c.raiz; tema: c.raiz.tema
+                        texto: c.nombreDe(modelData)
+                        elegido: !!c.espejo && c.espejo.destino === modelData.name
+                        onClic: if (!elegido) c.reflejar(c.espejo.origen, modelData.name)
+                    }
+                }
+            }
+        }
+    }
+
     Etiqueta { s: c.raiz; tema: c.raiz.tema; texto: "Monitores" }
     Ancla {
         raiz: c.raiz
@@ -133,7 +227,7 @@ Column {
         VistaMonitores {
             width: parent.width
             raiz: c.raiz
-            salidas: c.salidas.filter(o => !!o.logical)
+            salidas: c.enMapa
             elegida: c.activa ? c.activa.name : ""
             principal: c.principal
             onElegir: n => c.elegida = n
@@ -142,23 +236,24 @@ Column {
         Text {
             width: parent.width
             wrapMode: Text.Wrap
-            text: c.salidas.length > 1 ? "Arrastra un monitor para ordenarlo. Haz clic en uno para ver sus ajustes."
+            text: c.espejo ? "El monitor reflejado no es parte del escritorio: elígelo abajo para ver sus ajustes."
+                : c.salidas.length > 1 ? "Arrastra un monitor para ordenarlo. Haz clic en uno para ver sus ajustes."
                 : "Al conectar otro monitor aparecerá aquí, y podrás arrastrarlo para ordenarlo."
             font.family: c.raiz.fuente
             font.pixelSize: 10
             color: c.raiz.alfa(c.raiz.tema.surfaceText, 0.62)
         }
-        // Las apagadas no están en el mapa: se eligen aquí
+        // Las apagadas y la reflejada no están en el mapa: se eligen aquí
         Flow {
-            visible: c.salidas.some(o => !o.logical)
+            visible: c.salidas.some(o => !o.logical || c.esReflejado(o))
             width: parent.width
             spacing: 6
             Repeater {
-                model: c.salidas.filter(o => !o.logical)
+                model: c.salidas.filter(o => !o.logical || c.esReflejado(o))
                 delegate: Chip {
                     required property var modelData
                     s: c.raiz; tema: c.raiz.tema
-                    texto: modelData.name + " (apagada)"
+                    texto: modelData.name + (modelData.logical ? " (reflejada)" : " (apagada)")
                     elegido: !!c.activa && c.activa.name === modelData.name
                     onClic: c.elegida = modelData.name
                 }

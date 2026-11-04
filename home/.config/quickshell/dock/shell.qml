@@ -282,7 +282,7 @@ Scope {
     // ===== Un dock completo por monitor =====
     Variants {
         id: pantallas
-        model: Quickshell.screens
+        model: Principal.pantallas
         delegate: Scope {
             id: mon
             required property var modelData

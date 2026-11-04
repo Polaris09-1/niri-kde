@@ -482,6 +482,13 @@ Scope {
     // Quickshell avisa de cambios en las pantallas; niri dice cuáles siguen conectadas (una apagada sigue en su lista,
     // así que apagarla desde Ajustes no cuenta como desconectar).
     property var monitores: null         // { conector: "Marca Modelo" }; null = aún sin leer (arrancar no avisa)
+    // Red de seguridad: hay monitores conectados y ninguno encendido (se desconectó el único encendido, o la interna
+    // está guardada como apagada). Devuelve cuál encender: la interna, o el primero. "" si no hace falta.
+    function pantallaARescatar(d) {
+        var nombres = Object.keys(d)
+        if (nombres.length === 0 || nombres.some(k => d[k].logical)) return ""
+        return nombres.find(k => /^(eDP|LVDS|DSI)/.test(k)) || nombres.sort()[0]
+    }
     Connections {
         target: Quickshell
         function onScreensChanged() { leerMonitores.restart() }
@@ -495,6 +502,12 @@ Scope {
             onStreamFinished: {
                 var d
                 try { d = JSON.parse(text) } catch (e) { return }
+                var rescatar = root.pantallaARescatar(d)
+                if (rescatar !== "") {
+                    Quickshell.execDetached(["niri", "msg", "output", rescatar, "on"])
+                    root.ejecutar(["notify-send", "-a", "Pantalla", "-i", "video-display", "--", "Pantalla encendida",
+                                   "No quedaba ninguna encendida: se encendió " + rescatar + "."])
+                }
                 var ahora = {}
                 Object.keys(d).forEach(k => {
                     var n = [d[k].make, d[k].model].filter(x => x && x !== "Unknown").join(" ")
@@ -721,6 +734,8 @@ Scope {
                 campanita: { activa: campanitaAvisos.activa, salida: campanitaAvisos.salida, encima: campanitaAvisos.encima,
                              numero: avisos.nuevosPC, titulo: avisos.tituloPC } })
         }
+        // Para probar la red de seguridad con datos inventados: qué pantalla encendería (no enciende nada)
+        function rescatePantalla(salidas: string): string { return root.pantallaARescatar(JSON.parse(salidas)) }
         // Cada barra: su monitor, workspaces, ventana activa y pantalla completa
         function barras(): string {
             var r = []

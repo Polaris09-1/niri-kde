@@ -6,8 +6,30 @@ import QtQuick.Effects
 // Popups de notificaciones: arriba a la derecha, debajo de la barra.
 // Entran deslizándose desde el borde; al irse salen hacia la derecha y los demás suben.
 PanelWindow {
-    screen: Principal.pantalla
+    screen: Principal.porNombre(w.salida) || Principal.pantalla
     id: w
+
+    // Salen en el monitor enfocado cuando llega el aviso; si ya hay alguno a la vista, se van todos con el último
+    property string salida: ""
+    Connections {
+        target: w.av
+        function onVaAMostrar() {
+            if (w.salida === w.s.salidaEnfocada) return
+            w.salida = w.s.salidaEnfocada
+            w.recrearTarjetas()
+        }
+    }
+    // Al recrearse la ventana (otro monitor, o cambian las pantallas) las tarjetas que había siguen en la lista pero dejan de
+    // verse: se vuelven a crear, entran deslizándose y su tiempo empieza de nuevo
+    function recrearTarjetas() {
+        if (w.av.emergentes.count === 0) return
+        repetidor.model = null
+        repetidor.model = Qt.binding(() => w.av.emergentes)
+    }
+    Connections {
+        target: Principal
+        function onListaChanged() { if (Principal.lista) w.recrearTarjetas() }
+    }
 
     property var s
     property var tema
@@ -44,6 +66,7 @@ PanelWindow {
         spacing: 0
 
         Repeater {
+            id: repetidor
             model: w.av.emergentes
 
             delegate: Item {
@@ -59,7 +82,8 @@ PanelWindow {
                 height: (tarjeta.implicitHeight + 10) * alto
                 clip: false
 
-                Component.onCompleted: { entrar.start() }
+                // Una tarjeta recreada puede venir ya de salida: entonces no entra, solo se va
+                Component.onCompleted: { if (saliendo) { alto = 1; desliz.x = 0; salir.start() } else entrar.start() }
                 onSaliendoChanged: if (saliendo) { entrar.stop(); salir.start() }
 
                 ParallelAnimation {

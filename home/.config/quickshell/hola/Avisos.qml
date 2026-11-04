@@ -25,13 +25,24 @@ Scope {
     }
     property int sinLeer: 0
     readonly property bool noMolestar: ajustes.noMolestar
-    // Hay una ventana a pantalla completa (lo pone la barra): como No molestar, pero sin cambiar el ajuste
+    // Hay una ventana a pantalla completa en el monitor enfocado (lo pone la barra)
     property bool callarPantallaCompleta: false
-    readonly property bool callar: av.noMolestar || av.callarPantallaCompleta
+    // Qué hacer entonces con los normales: campanita | silencio | completo (Ajustes → Notificaciones)
+    property string modoPantallaCompleta: "campanita"
+    readonly property bool callarPC: av.callarPantallaCompleta && av.modoPantallaCompleta !== "completo"
+    signal vaAMostrar()
+    readonly property bool callar: av.noMolestar || av.callarPC
     // Al entrar en pantalla completa se retiran los popups normales que había (siguen en el historial)
-    onCallarPantallaCompletaChanged: if (callarPantallaCompleta)
+    onCallarPCChanged: if (callarPC)
         for (var i = emergentes.count - 1; i >= 0; i--)
             if (emergentes.get(i).urgencia !== 2) av.quitarEmergente(emergentes.get(i).clave)
+    // Campanita: el número acumula durante esa pantalla completa, aunque la píldora se vaya y vuelva
+    property int nuevosPC: 0
+    property string tituloPC: ""
+    signal sonarCampanita()
+    onCallarPantallaCompletaChanged: if (!callarPantallaCompleta) av.nuevosPC = 0
+    // Claves de avisos callados por pantalla completa: si la app los retira, siguen en el historial
+    property var sinVer: ({})
 
     property ListModel historial: ListModel {}
     property ListModel emergentes: ListModel {}
@@ -154,12 +165,22 @@ Scope {
 
         av.sinLeer++
         if (!av.callar || fila.urgencia === 2) av.mostrar(fila)
+        else if (av.callarPC) av.calladoEnPC(fila)
         guardar.restart()
+    }
+
+    function calladoEnPC(fila) {
+        av.sinVer[fila.clave] = true
+        if (av.noMolestar || av.modoPantallaCompleta !== "campanita" || !av.emergentesVisibles) return
+        av.nuevosPC++
+        av.tituloPC = fila.resumen || fila.app
+        av.sonarCampanita()
     }
 
     function mostrar(fila) {
         var i = av.indice(emergentes, fila.clave)
         if (i >= 0) { emergentes.set(i, fila); return }
+        av.vaAMostrar()    // antes de insertar: así la ventana ya está en su monitor
         emergentes.insert(0, fila)
         // Demasiados: el más viejo se va (sigue en el historial)
         var visibles = 0
@@ -188,8 +209,10 @@ Scope {
 
     function alCerrar(clave, motivo) {
         delete av.vivos[clave]
-        // La app la retiró: fuera de todas partes
-        if (motivo === NotificationCloseReason.CloseRequested) {
+        var sinVer = !!av.sinVer[clave]
+        delete av.sinVer[clave]
+        // La app la retiró: fuera de todas partes, salvo si llegó en pantalla completa y no se llegó a ver
+        if (motivo === NotificationCloseReason.CloseRequested && !sinVer) {
             av.quitarEmergente(clave)
             av.quitarHistorial(clave)
         } else {
@@ -280,6 +303,7 @@ Scope {
         else emergentes.clear()
         historial.clear()
         av.sinLeer = 0
+        av.nuevosPC = 0
         guardar.restart()
     }
 

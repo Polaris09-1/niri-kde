@@ -52,8 +52,7 @@ Scope {
 
     // ===== Estado =====
     property var workspaces: []
-    property string tituloVentana: ""
-    property string appVentana: ""
+    property var ventanas: []         // todas las ventanas de niri; cada barra busca la activa de su monitor
     property int cpu: 0
     property int ram: 0
     property int temp: 0
@@ -344,13 +343,15 @@ Scope {
     }
 
     // Abre el panel de estado directo en una página (desde la barra, el dock o el IPC)
-    function abrirPagina(nombre) {
+    function abrirPagina(nombre, b) {
         if (root.paginas.indexOf(nombre) < 0) nombre = "inicio"
-        if (root.panel !== "estado") {
-            root.panel = ""
-            root.alternar("estado")
+        var destino = b || (root.panel !== "" ? root.barraActual : root.barraEnfocada)
+        if (root.panel !== "estado" || destino !== root.barraActual) {
+            if (destino === root.barraActual) root.panel = ""
+            root.abrirEn("estado", null, destino, true)
         }
-        root.pagina = nombre
+        if (root.mudanza) root.mudanza.pagina = nombre
+        else root.pagina = nombre
     }
 
     // Bluetooth: resumen para la tarjeta de inicio
@@ -377,6 +378,13 @@ Scope {
         emergentesVisibles: root.panel !== "avisos"
         // En pantalla completa los avisos normales no salen como popup (van al historial); los urgentes sí
         callarPantallaCompleta: root.pantallaCompleta
+        modoPantallaCompleta: root.opc("avisos.pantallaCompleta", "campanita")
+    }
+    CampanitaAvisos {
+        id: campanitaAvisos
+        s: root
+        tema: tema
+        av: avisos
     }
     Emergentes {
         s: root
@@ -446,16 +454,24 @@ Scope {
     // Solo para medir por IPC (hola hover): momento del último cursor simulado y del último cambio de panel
     property real tCursor: 0
     property real tPanel: 0
-    onBotonBajoCursorChanged: {
-        if (root.abrirAlPasar && root.botonBajoCursor !== "" && root.botonBajoCursor !== root.panel) timerAbrir.restart()
+    // Tras un clic en la campanita de pantalla completa la barra baja bajo el cursor: no debe cambiar de panel por eso
+    property real ignorarAbrirHasta: 0
+    // ¿Hay que abrir otro panel, o el mismo en otro monitor?
+    readonly property bool quiereAbrir: root.botonBajoCursor !== "" && (root.botonBajoCursor !== root.panel
+        || (root.barraEncima !== null && root.barraEncima !== root.barraActual))
+    onQuiereAbrirChanged: revisarAbrir()
+    onBotonBajoCursorChanged: revisarAbrir()
+    onBarraEncimaChanged: revisarAbrir()
+    function revisarAbrir() {
+        if (root.abrirAlPasar && root.quiereAbrir) timerAbrir.restart()
         else timerAbrir.stop()
     }
     Timer {
         id: timerAbrir
         interval: root.esperaAbrir
         // Si estás escribiendo o hay una confirmación, no cambia de panel
-        onTriggered: if (root.botonBajoCursor !== "" && root.botonBajoCursor !== root.panel && !root.retener)
-            root.abrirAlPasarSobre(root.botonBajoCursor)
+        onTriggered: if (root.quiereAbrir && !root.retener && Date.now() >= root.ignorarAbrirHasta)
+            root.abrirAlPasarSobre(root.botonBajoCursor, root.barraEncima)
     }
     Timer {
         id: timerCerrar
@@ -503,20 +519,51 @@ Scope {
     property string simPantallaCompleta: ""
 
     // ===== Lo que depende de las barras =====
-    // La barra de los paneles: la que tiene el botón del que nacen
-    readonly property var barraActual: barras.instances.length > 0 ? barras.instances[0] : null
+    function barraDe(salida) {
+        var l = barras.instances
+        for (var i = 0; i < l.length; i++) if (l[i].salida === salida) return l[i]
+        return null
+    }
+    readonly property var barraPrincipal: {
+        var l = barras.instances
+        var n = Principal.pantalla ? Principal.pantalla.name : ""
+        for (var i = 0; i < l.length; i++) if (l[i].salida === n) return l[i]
+        return l.length > 0 ? l[0] : null
+    }
+    // Monitor enfocado: lo dicen los workspaces, sin preguntar a niri cada vez
+    readonly property string salidaEnfocada: {
+        var w = root.workspaces.find(x => x.is_focused)
+        return w ? w.output : ""
+    }
+    readonly property var barraEnfocada: root.barraDe(root.salidaEnfocada) || root.barraPrincipal
+    // La barra de los paneles: la que tiene el botón del que nacen. Solo hay un panel y una capa, en un monitor a la vez
+    property string salidaPanel: ""
+    readonly property var barraActual: root.barraDe(root.salidaPanel) || root.barraPrincipal
+    // Si el monitor del panel desaparece, el panel se cierra
+    Connections {
+        target: barras
+        function onInstancesChanged() {
+            if (root.salidaPanel !== "" && !root.barraDe(root.salidaPanel)) {
+                root.panel = ""
+                root.salidaPanel = ""
+                root.mudanza = null
+            }
+        }
+    }
     readonly property string salidaBarra: root.barraActual ? root.barraActual.salida : ""
-    readonly property bool pantallaCompleta: root.barraActual ? root.barraActual.pantallaCompleta : false
+    // Pantalla completa en el monitor enfocado: solo entonces se callan los avisos normales
+    readonly property bool pantallaCompleta: root.barraEnfocada ? root.barraEnfocada.pantallaCompleta : false
     readonly property rect rIzq: root.barraActual ? root.barraActual.rIzq : Qt.rect(0, 0, 0, 0)
     readonly property rect rReloj: root.barraActual ? root.barraActual.rReloj : Qt.rect(0, 0, 0, 0)
     readonly property rect rMusica: root.barraActual ? root.barraActual.rMusica : Qt.rect(0, 0, 0, 0)
     readonly property rect rDer: root.barraActual ? root.barraActual.rDer : Qt.rect(0, 0, 0, 0)
-    // Botón bajo el cursor en cualquier barra
-    readonly property string botonReal: {
+    // Botón bajo el cursor, en cualquier barra
+    readonly property var barraEncima: {
         var l = barras.instances
-        for (var i = 0; i < l.length; i++) if (l[i].botonEncima !== "") return l[i].botonEncima
-        return ""
+        for (var i = 0; i < l.length; i++) if (l[i].botonEncima !== "") return l[i]
+        return null
     }
+    readonly property string botonReal: root.barraEncima ? root.barraEncima.botonEncima : ""
     readonly property bool cursorEnMusica: {
         var l = barras.instances
         for (var i = 0; i < l.length; i++) if (l[i].musica.cursorDentro) return true
@@ -530,17 +577,53 @@ Scope {
         return true
     }
 
-    function abrirAlPasarSobre(nombre) {
-        if (root.panel === nombre) return
-        root.mostrarPanel(nombre)
-        root.porClic = false
+    function abrirAlPasarSobre(nombre, b) {
+        b = b || root.barraActual
+        if (root.panel === nombre && b === root.barraActual) return
+        root.abrirEn(nombre, null, b, false)
+    }
+
+    // Abrir en la barra b. Cambiar la capa de monitor la recrea y cortaría la animación: si hay algo a la vista en el
+    // otro monitor, primero se cierra y luego se abre aquí. En el mismo monitor sigue transformándose como siempre.
+    property var mudanza: null            // { nombre, desde, salida, fijo, pagina }
+    function abrirEn(nombre, desde, b, fijo) {
+        b = b || root.barraActual
+        if (!b) return
+        if (b !== root.barraActual && (root.panel !== "" || panelEstado.vivo || panelCal.vivo)) {
+            root.mudanza = { nombre: nombre, desde: desde, salida: b.salida, fijo: fijo, pagina: "" }
+            root.panel = ""
+            timerMudanza.restart()
+            return
+        }
+        root.mudanza = null
+        timerMudanza.stop()
+        root.salidaPanel = b.salida
+        if (root.panel === nombre) { root.porClic = fijo; return }
+        root.mostrarPanel(nombre, desde)
+        root.porClic = fijo
+    }
+    Timer {
+        id: timerMudanza
+        interval: 130     // lo que tarda en cerrarse (120 ms)
+        onTriggered: {
+            var m = root.mudanza
+            root.mudanza = null
+            if (!m || !root.barraDe(m.salida)) return
+            root.salidaPanel = m.salida
+            root.mostrarPanel(m.nombre, m.desde)
+            root.porClic = m.fijo
+            if (m.pagina !== "") root.pagina = m.pagina
+        }
     }
 
     // Clic en un botón, IPC o dock: abre/cierra como siempre.
     // Si ya estaba abierto al pasar el cursor, el clic lo deja fijo (no lo cierra).
-    function alternar(nombre, desde) {
+    // b: la barra del botón pulsado. Sin ella (IPC, atajos), el monitor enfocado si no hay nada abierto.
+    function alternar(nombre, desde, b) {
         timerAbrir.stop()
+        if (b && b !== root.barraActual && root.panel !== "") { root.abrirEn(nombre, desde, b, true); return }
         if (root.panel === nombre && !root.porClic) { root.porClic = true; return }
+        if (root.panel === "") { root.abrirEn(nombre, desde, b || root.barraEnfocada, true); return }
         root.mostrarPanel(nombre, desde)
         root.porClic = root.panel !== ""
     }
@@ -560,6 +643,7 @@ Scope {
             root.origenAvisos = r
             root.modoReloj = "avisos"
             avisos.sinLeer = 0
+            avisos.nuevosPC = 0
         } else {
             root.origenCal = r
             root.modoReloj = "calendario"
@@ -618,7 +702,8 @@ Scope {
                 enPanel: root.cursorEnPanel, retener: root.retener })
         }
         function hover(): string {
-            return JSON.stringify({ panel: root.panel, porClic: root.porClic, bajoCursor: root.botonBajoCursor,
+            return JSON.stringify({ panel: root.panel, salida: root.salidaPanel, enfocada: root.salidaEnfocada,
+                porClic: root.porClic, bajoCursor: root.botonBajoCursor,
                 enPanel: root.cursorEnPanel, escribiendo: root.escribiendo, dialogo: root.hayDialogo,
                 gracia: root.enGracia, pulsado: panelEstado.pulsado || panelCal.pulsado,
                 abriendo: timerAbrir.running, cerrando: timerCerrar.running,
@@ -627,12 +712,24 @@ Scope {
         function cerrar(): void { root.panel = "" }
         // Estado de la pantalla completa (lo que dice niri y lo que hace la barra)
         function pantallaCompleta(): string {
-            return JSON.stringify({ salida: root.salidaBarra, pantallaCompleta: root.pantallaCompleta,
+            return JSON.stringify({ salida: root.salidaEnfocada, pantallaCompleta: root.pantallaCompleta,
                 niri: pcompleta.porSalida, ventana: pcompleta.ventanaPorSalida, vistaGeneral: pcompleta.vistaGeneral,
-                simulada: root.simPantallaCompleta, revelada: root.barraActual ? root.barraActual.barraRevelada : false,
-                oculta: root.barraActual ? root.barraActual.barraOculta : false,
-                cursorArriba: root.barraActual ? root.barraActual.cursorArriba : false, zona: root.barraActual ? root.barraActual.zona : 0,
-                avisosCallados: avisos.callarPantallaCompleta })
+                simulada: root.simPantallaCompleta, revelada: root.barraEnfocada ? root.barraEnfocada.barraRevelada : false,
+                oculta: root.barraEnfocada ? root.barraEnfocada.barraOculta : false,
+                cursorArriba: root.barraEnfocada ? root.barraEnfocada.cursorArriba : false, zona: root.barraEnfocada ? root.barraEnfocada.zona : 0,
+                avisosCallados: avisos.callarPC, modoAvisos: avisos.modoPantallaCompleta,
+                campanita: { activa: campanitaAvisos.activa, salida: campanitaAvisos.salida, encima: campanitaAvisos.encima,
+                             numero: avisos.nuevosPC, titulo: avisos.tituloPC } })
+        }
+        // Cada barra: su monitor, workspaces, ventana activa y pantalla completa
+        function barras(): string {
+            var r = []
+            var l = barras.instances
+            for (var i = 0; i < l.length; i++) r.push({ salida: l[i].salida, principal: root.barraPrincipal === l[i], conPanel: l[i].conPanel,
+                workspaces: l[i].workspaces.map(w => (w.is_active ? "*" : "") + w.idx), ventana: l[i].appVentana,
+                conTitulo: l[i].tituloVentana !== "", pantallaCompleta: l[i].pantallaCompleta, oculta: l[i].barraOculta,
+                cursorArriba: l[i].cursorArriba, zona: l[i].zona, musica: l[i].musica.visible })
+            return JSON.stringify(r)
         }
         // si | no | auto (para probar sin una ventana a pantalla completa)
         function simularPantallaCompleta(v: string): string {
@@ -676,6 +773,8 @@ Scope {
         }
         // qs -c hola ipc call hola pagina wifi|bluetooth|audio|sistema|energia|inicio
         function pagina(nombre: string): string { root.abrirPagina(nombre); return root.pagina }
+        // Desde el dock: en el monitor del dock que recibió el clic
+        function paginaEn(nombre: string, salida: string): string { root.abrirPagina(nombre, root.barraDe(salida)); return root.pagina }
         // Grabar pantalla: inicia (pantalla completa, último audio elegido) o detiene
         function grabar(): string { if (grabadora.grabando) grabadora.detener(); else root.grabar("pantalla", grabadora.audio); return grabadora.grabando ? "deteniendo" : "iniciando" }
         function grabacion(): string { return JSON.stringify({ grabando: grabadora.grabando, segundos: grabadora.segundos, ruta: grabadora.ruta, error: grabadora.error }) }
@@ -753,7 +852,7 @@ Scope {
         interval: 60
         onTriggered: {
             pWorkspaces.running = true
-            pVentana.running = true
+            pVentanas.running = true
         }
     }
 
@@ -768,15 +867,11 @@ Scope {
     }
 
     Process {
-        id: pVentana
-        command: ["niri", "msg", "-j", "focused-window"]
+        id: pVentanas
+        command: ["niri", "msg", "-j", "windows"]
         stdout: StdioCollector {
             onStreamFinished: {
-                try {
-                    var v = JSON.parse(text)
-                    root.tituloVentana = v ? (v.title || "") : ""
-                    root.appVentana = v ? (v.app_id || "") : ""
-                } catch (e) {}
+                try { root.ventanas = JSON.parse(text) } catch (e) {}
             }
         }
     }
@@ -835,12 +930,12 @@ Scope {
 
     // ===== La barra =====
     // ===== Las barras =====
-    // Paso 1 de M3: sigue habiendo una sola, en el monitor principal. Lo de cada barra (pantalla completa, botones,
-    // máscara) vive en su "barra"; lo demás es común y está en root. La capa de paneles sigue a root.barraActual.
+    // Una por monitor. Lo de cada barra (workspaces, ventana activa, pantalla completa, botones, máscara) vive en su
+    // "barra"; lo demás es común y está en root. La capa de paneles sigue a root.barraActual.
     // Dentro de Variants no hace falta Principal.lista: cada pantalla crea y destruye sus propias ventanas.
     Variants {
         id: barras
-        model: Principal.pantalla ? [Principal.pantalla] : []
+        model: Quickshell.screens
         delegate: Scope {
             id: barra
             required property var modelData
@@ -849,13 +944,27 @@ Scope {
             readonly property var colores: tema
             readonly property var repro: rep
 
+            // ----- Workspaces y ventana activa de este monitor -----
+            readonly property bool conPanel: root.barraActual === barra
+            readonly property var workspaces: root.workspaces.filter(w => w.output === barra.salida)
+            readonly property var ventanaActiva: {
+                var w = barra.workspaces.find(x => x.is_active)
+                return w && w.active_window_id !== null ? root.ventanas.find(v => v.id === w.active_window_id) || null : null
+            }
+            readonly property string tituloVentana: barra.ventanaActiva ? (barra.ventanaActiva.title || "") : ""
+            readonly property string appVentana: barra.ventanaActiva ? (barra.ventanaActiva.app_id || "") : ""
+            // focus-workspace actúa sobre el monitor enfocado: primero hay que enfocar este
+            function irAWorkspace(idx) {
+                root.ejecutar(["sh", "-c", 'niri msg action focus-monitor "$1" && niri msg action focus-workspace "$2"', "sh", barra.salida, String(idx)])
+            }
+
             // ----- Pantalla completa: barra escondida que baja con el cursor -----
             readonly property bool pantallaCompleta: root.esconderEnPantallaCompleta
                 && (root.simPantallaCompleta !== "" ? root.simPantallaCompleta === "si" : pcompleta.en(barra.salida))
             property bool barraRevelada: false
             readonly property bool barraOculta: barra.pantallaCompleta && !barra.barraRevelada
             // El cursor está en el sensor o en la franja de la barra (o simulado por IPC), o hay un panel
-            readonly property bool mantenerBarra: hoverBarra.hovered || root.simCursor !== "" || root.panel !== ""
+            readonly property bool mantenerBarra: hoverBarra.hovered || root.simCursor !== "" || (barra.conPanel && root.panel !== "")
             onPantallaCompletaChanged: barra.revisarBarra()
             onMantenerBarraChanged: barra.revisarBarra()
             function revisarBarra() {
@@ -988,12 +1097,12 @@ Scope {
                                     rightPadding: 4
 
                                     Repeater {
-                                        model: root.workspaces.length
+                                        model: barra.workspaces.length
 
                                         delegate: Rectangle {
                                             id: pill
                                             required property int index
-                                            property var ws: root.workspaces[pill.index] || ({})
+                                            property var ws: barra.workspaces[pill.index] || ({})
                                             property bool activo: pill.ws.is_active === true
 
                                             anchors.verticalCenter: parent.verticalCenter
@@ -1015,7 +1124,7 @@ Scope {
                                                 anchors.margins: -4
                                                 hoverEnabled: true
                                                 cursorShape: Qt.PointingHandCursor
-                                                onClicked: root.ejecutar(["niri", "msg", "action", "focus-workspace", String(pill.ws.idx)])
+                                                onClicked: barra.irAWorkspace(pill.ws.idx)
                                             }
                                         }
                                     }
@@ -1024,10 +1133,10 @@ Scope {
                                 // Ventana activa: clic abre la vista general de niri
                                 Boton {
                                     anchors.verticalCenter: parent.verticalCenter
-                                    visible: root.tituloVentana !== "" && root.opc("barra.titulo", true)
+                                    visible: barra.tituloVentana !== "" && root.opc("barra.titulo", true)
                                     tema: barra.colores
-                                    imagen: root.iconoApp(root.appVentana)
-                                    texto: root.tituloVentana
+                                    imagen: root.iconoApp(barra.appVentana)
+                                    texto: barra.tituloVentana
                                     anchoMaxTexto: 320
                                     onClic: root.ejecutar(["niri", "msg", "action", "toggle-overview"])
                                 }
@@ -1047,7 +1156,7 @@ Scope {
                             simEncima: root.simCursor === "musica"
                             disponible: islaReloj.x - 8 - (islaIzq.visible ? islaIzq.x + islaIzq.width + 8 : 10)
                             habilitada: root.verMusica
-                            onAbrir: root.alternar("calendario", pildoraMusica)
+                            onAbrir: root.alternar("calendario", pildoraMusica, barra)
                         }
 
                         // ---------- Isla central: hora (abre el calendario) ----------
@@ -1074,21 +1183,21 @@ Scope {
                                 Boton {
                                     id: botonReloj
                                     tema: barra.colores
-                                    activo: root.panel === "calendario"
+                                    activo: barra.conPanel && root.panel === "calendario"
                                     icono: Qt.formatDateTime(reloj.date, "hh:mm")
                                     texto: root.opc("barra.fecha", true) ? reloj.date.toLocaleDateString(Qt.locale("es_EC"), "ddd d MMM") : ""
-                                    onClic: root.alternar("calendario")
+                                    onClic: root.alternar("calendario", null, barra)
                                 }
                                 // Campanita (siempre visible): tachada = No molestar; con número = avisos sin ver
                                 Boton {
                                     id: campana
                                     visible: root.opc("barra.campana", true)
                                     tema: barra.colores
-                                    activo: root.panel === "avisos"
+                                    activo: barra.conPanel && root.panel === "avisos"
                                     icono: root.ic(avisos.noMolestar ? 0xF009B : avisos.sinLeer > 0 ? 0xF116B : 0xF009C)
                                     colorIcono: avisos.noMolestar ? root.alfa(tema.surfaceText, 0.6) : tema.primary
                                     texto: avisos.sinLeer > 0 ? String(Math.min(avisos.sinLeer, 99)) : ""
-                                    onClic: root.alternar("avisos")
+                                    onClic: root.alternar("avisos", null, barra)
                                 }
                             }
                         }
@@ -1251,7 +1360,7 @@ Scope {
                                     height: 30
                                     width: filaPildora.width + 22
                                     radius: height / 2
-                                    color: root.panel === "estado" ? root.alfa(tema.primary, 0.28)
+                                    color: barra.conPanel && root.panel === "estado" ? root.alfa(tema.primary, 0.28)
                                         : root.alfa(tema.primary, maPildora.containsMouse ? 0.18 : 0.08)
                                     Behavior on color {
                                         ColorAnimation { duration: 180 }
@@ -1295,7 +1404,7 @@ Scope {
                                         hoverEnabled: true
                                         acceptedButtons: Qt.LeftButton | Qt.RightButton
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: m => m.button === Qt.RightButton ? root.abrirPagina("audio") : root.alternar("estado")
+                                        onClicked: m => m.button === Qt.RightButton ? root.abrirPagina("audio", barra) : root.alternar("estado", null, barra)
                                         onWheel: w => root.cambiarVolumen(w.angleDelta.y > 0 ? 0.02 : -0.02)
                                     }
                                 }
@@ -1309,7 +1418,7 @@ Scope {
 
     // ===== Capa de paneles (calendario y estado) =====
     PanelWindow {
-        screen: Principal.pantalla
+        screen: Principal.porNombre(root.salidaPanel) || Principal.pantalla
         id: capa
         anchors {
             top: true
@@ -1324,8 +1433,11 @@ Scope {
         WlrLayershell.namespace: "hola-paneles"
         // Abierto con clic: teclado exclusivo (como siempre). Abierto al pasar el cursor: el teclado
         // solo viene al panel si haces clic dentro (pasar por la hora no roba lo que escribes).
+        // OnDemand solo con el cursor en el panel o escribiendo: con el cursor en un botón de la barra, un clic le daba el
+        // foco a esta capa y Qt cancelaba la pulsación del botón (pressed + canceled, sin clicked).
         WlrLayershell.keyboardFocus: root.panel === "" ? WlrKeyboardFocus.None
-            : root.porClic ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.OnDemand
+            : root.porClic ? WlrKeyboardFocus.Exclusive
+            : (root.cursorEnPanel || root.escribiendo) ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
         // Las islas de la barra quedan fuera de esta capa: así el cursor y los clics llegan
         // a sus botones aunque haya un panel abierto encima

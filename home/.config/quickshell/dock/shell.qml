@@ -168,8 +168,9 @@ Scope {
         "@energia": { nombre: "Energía", icono: "system-shutdown" }
     })
 
-    function abrirPagina(p) {
-        Quickshell.execDetached(["qs", "-c", "hola", "ipc", "call", "hola", "pagina", p])
+    // salida: monitor del dock que recibió el clic ("" = lo que decida la barra)
+    function abrirPagina(p, salida) {
+        Quickshell.execDetached(["qs", "-c", "hola", "ipc", "call", "hola"].concat(salida ? ["paginaEn", p, salida] : ["pagina", p]))
     }
 
 
@@ -211,7 +212,7 @@ Scope {
             Quickshell.execDetached(["qs", "-c", "cajon", "ipc", "call", "cajon"].concat(salida ? ["toggleEn", salida] : ["toggle"]))
             return "cajón"
         }
-        if (d.especial) { root.abrirPagina(d.especial); return "panel " + d.especial }
+        if (d.especial) { root.abrirPagina(d.especial, salida); return "panel " + d.especial }
         if (d.ventanas.length === 0) { root.lanzar(d.entrada); return "abrir " + d.name }
         var actual = root.ventanas.find(v => v.is_focused)
         var i = actual ? d.ventanas.indexOf(actual.id) : -1

@@ -13,6 +13,7 @@ Item {
     property var s                 // la barra (fuente, ic, alfa, refrescarWifi)
     property var tema
     property bool activa: false
+    property bool conAtras: true       // sin flecha cuando va dentro de la app de Ajustes
     signal atras()
 
     implicitHeight: col.implicitHeight
@@ -315,6 +316,7 @@ Item {
 
         Encabezado {
             tema: w.tema
+            conAtras: w.conAtras
             titulo: "Wi-Fi"
             onAtras: w.atras()
 

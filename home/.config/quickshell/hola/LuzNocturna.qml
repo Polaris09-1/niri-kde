@@ -32,6 +32,10 @@ Item {
         ajustes.modo = m
     }
     function alternar() { ponerModo(ln.activa ? "apagada" : (ajustes.ultimoModo || "sol")) }
+    function ponerUbicacion(lat, lon) {
+        ajustes.lat = Math.max(-90, Math.min(90, lat))
+        ajustes.lon = Math.max(-180, Math.min(180, lon))
+    }
     function ponerTemperatura(k) {
         k = Math.round(Math.max(3000, Math.min(5500, k)) / 100) * 100
         ajustes.temperatura = k
@@ -113,6 +117,7 @@ Item {
     function info() {
         return { modo: ln.modo, temperatura: ln.temperatura, actual: ln.tempActual, calida: ln.calida,
             corriendo: proc.running, previa: ln.previa, alba: ln.alba, amanecer: ln.amanecer,
-            atardecer: ln.atardecer, anochecer: ln.anochecer, error: ln.error, comando: proc.command }
+            atardecer: ln.atardecer, anochecer: ln.anochecer, error: ln.error, comando: proc.command,
+            lat: ajustes.lat, lon: ajustes.lon }
     }
 }

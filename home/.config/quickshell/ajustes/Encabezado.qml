@@ -1,0 +1,1 @@
+../hola/Encabezado.qml

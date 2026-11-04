@@ -1,0 +1,16 @@
+// Lo genera la app de Ajustes (ajustes-niri.sh lo valida antes de usarlo). No lo edites a mano: cambia desde Ajustes.
+
+input {
+    keyboard {
+        repeat-delay 520
+        repeat-rate 25
+    }
+    touchpad {
+        tap
+        natural-scroll
+        accel-speed 0.4
+        scroll-factor 1.5
+    }
+    mouse {
+    }
+}

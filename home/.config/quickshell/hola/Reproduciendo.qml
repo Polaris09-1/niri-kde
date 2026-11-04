@@ -17,6 +17,7 @@ Scope {
 
     // Ajustes
     property int esperaOcultar: 10000   // ms desde que deja de sonar hasta que se oculta
+    property bool ondasReales: true     // false = animación simulada
     property int esperaAudio: 5500      // ms para creer a un audio sin MPRIS (dos lecturas de "bloqueo": un aviso no cuenta)
 
     // ===== Reproductores =====
@@ -95,7 +96,7 @@ Scope {
 
     Process {
         id: pCava
-        running: r.quiereOndas && !r.cavaFallo && !r.reiniciando
+        running: r.quiereOndas && r.ondasReales && !r.cavaFallo && !r.reiniciando
         command: ["cava", "-p", Quickshell.shellDir + "/cava-ondas.conf"]
         stdout: SplitParser {
             onRead: linea => {
@@ -103,11 +104,11 @@ Scope {
                 if (v.length >= 5) r.niveles = v.slice(0, 5).map(Number)
             }
         }
-        onRunningChanged: if (!running && r.quiereOndas && !r.reiniciando) r.cavaFallo = true
+        onRunningChanged: if (!running && r.quiereOndas && r.ondasReales && !r.reiniciando) r.cavaFallo = true
     }
     // Sin cava: barras que suben y bajan con ritmos distintos
     Timer {
-        running: r.quiereOndas && r.cavaFallo
+        running: r.quiereOndas && (r.cavaFallo || !r.ondasReales)
         repeat: true
         interval: 50
         property real t: 0

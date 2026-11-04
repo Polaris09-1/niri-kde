@@ -11,6 +11,7 @@ Item {
     property string icono: ""
     property string imagen: ""
     property string titulo: ""
+    property bool conRueda: true
     signal cambiar(real v)
     signal alternarMudo()
 
@@ -51,6 +52,7 @@ Item {
         anchors.rightMargin: 8
         anchors.verticalCenter: btn.verticalCenter
         tema: f.tema
+        conRueda: f.conRueda
         valor: f.mudo ? 0 : f.volumen
         onMovido: v => f.cambiar(v)
         onSoltado: v => f.cambiar(v)

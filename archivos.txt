@@ -3,6 +3,7 @@
 .config/niri/config.kdl
 .config/niri/animaciones.kdl
 .config/niri/colors.kdl
+.config/niri/ajustes.kdl
 .config/quickshell
 .config/matugen
 .config/alacritty/alacritty.toml
@@ -23,5 +24,11 @@
 .local/bin/fondo-arrancar.sh
 .local/bin/fondo-optimizar.sh
 .local/bin/workspace-circular.sh
+.local/bin/ajustes-abrir.sh
+.local/bin/ajustes-niri.sh
+.local/bin/ajustes-respaldo.sh
+.local/bin/ajustes-pantalla.sh
+.local/bin/ajustes-monitor-aviso.sh
 .local/share/dbus-1/services/fr.emersion.mako.service
 .local/share/applications/Alacritty.desktop
+.local/share/applications/niri-ajustes.desktop

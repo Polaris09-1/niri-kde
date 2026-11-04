@@ -11,6 +11,7 @@ Item {
     property real valor: 0
     readonly property bool arrastrando: ma.pressed
     property real local: 0
+    property bool conRueda: true      // false = la rueda pasa de largo (dentro de una página que se desplaza)
     readonly property real vista: Math.max(0, Math.min(1, ma.pressed ? d.local : d.valor))
 
     signal movido(real v)
@@ -72,6 +73,7 @@ Item {
         onReleased: m => d.soltado(d.limitar(m.x / width))
         onCanceled: d.soltado(d.local)
         onWheel: w => {
+            if (!d.conRueda) { w.accepted = false; return }
             var v = d.limitar(d.valor + (w.angleDelta.y > 0 ? 0.05 : -0.05))
             d.movido(v)
             d.soltado(v)

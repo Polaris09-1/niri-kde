@@ -287,27 +287,27 @@ ShellRoot {
     // ===== Inactividad =====
     IdleMonitor {
         id: inactivoAtenuar
-        enabled: !root.bloqueado && !root.reiniciandoMonitores
+        enabled: !root.bloqueado && !root.reiniciandoMonitores && root.bloquearSeg > 0
         timeout: root.atenuarSeg
         respectInhibitors: true
     }
     IdleMonitor {
         id: inactivoBloquear
-        enabled: !root.bloqueado && !root.reiniciandoMonitores
+        enabled: !root.bloqueado && !root.reiniciandoMonitores && root.bloquearSeg > 0
         timeout: root.bloquearSeg
         respectInhibitors: true
         onIsIdleChanged: if (isIdle) root.alInactivo("bloquear")
     }
     IdleMonitor {
         id: inactivoPantalla
-        enabled: root.bloqueado
+        enabled: root.bloqueado && root.apagarPantallaSeg > 0
         timeout: root.apagarPantallaSeg
         respectInhibitors: false
         onIsIdleChanged: if (isIdle) Quickshell.execDetached(["niri", "msg", "action", "power-off-monitors"])
     }
     IdleMonitor {
         id: inactivoSuspender
-        enabled: UPower.onBattery && !root.reiniciandoMonitores
+        enabled: UPower.onBattery && !root.reiniciandoMonitores && root.suspenderSeg > 0
         timeout: root.suspenderSeg
         respectInhibitors: true
         onIsIdleChanged: if (isIdle) root.alInactivo("suspender")
@@ -436,6 +436,36 @@ ShellRoot {
         interval: 900000
         onTriggered: root.ponerTiempos(0, false)
     }
+    // Tiempos de la app de Ajustes (ajustes/ajustes.json); sin archivo, los de fábrica
+    property var conf: ({})
+    FileView {
+        path: Quickshell.env("HOME") + "/.config/quickshell/ajustes/ajustes.json"
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: {
+            try { root.conf = JSON.parse(text()) || ({}) } catch (e) { root.conf = ({}) }
+            // Durante una prueba por IPC mandan los tiempos de prueba
+            if (!finTiempos.running) root.aplicarAjustes()
+        }
+    }
+    function opc(k, fabrica) { return root.conf[k] !== undefined ? root.conf[k] : fabrica }
+    function tiemposDeAjustes() {
+        var b = root.opc("energia.bloquearMin", 10) * 60
+        root.bloquearSeg = b
+        root.atenuarSeg = Math.max(1, b - root.opc("energia.atenuarSeg", 30))
+        root.apagarPantallaSeg = root.opc("energia.apagarSeg", 30)
+        root.suspenderSeg = root.opc("energia.suspenderMin", 30) * 60
+    }
+    function aplicarAjustes() {
+        var antes = [root.bloquearSeg, root.atenuarSeg, root.apagarPantallaSeg, root.suspenderSeg].join()
+        root.tiemposDeAjustes()
+        if (antes === [root.bloquearSeg, root.atenuarSeg, root.apagarPantallaSeg, root.suspenderSeg].join()) return
+        // IdleMonitor ignora un timeout nuevo si no se reactiva; si no cambió nada, no se toca el contador
+        root.reiniciandoMonitores = true
+        reactivarMonitores.restart()
+        root.anotar("tiempos: bloquear=" + root.bloquearSeg + " s")
+    }
     function ponerTiempos(seg, simulado) {
         root.reiniciandoMonitores = true
         reactivarMonitores.restart()
@@ -446,9 +476,7 @@ ShellRoot {
             if (simulado) root.suspenderSeg = seg
             finTiempos.restart()
         } else {
-            root.atenuarSeg = 570
-            root.bloquearSeg = 600
-            root.suspenderSeg = 1800
+            root.tiemposDeAjustes()
             finTiempos.stop()
         }
         root.anotar("tiempos: bloquear=" + root.bloquearSeg + " s" + (root.simular ? " (simulado)" : ""))

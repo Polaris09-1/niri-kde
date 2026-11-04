@@ -7,6 +7,7 @@ Item {
     property var tema
     property string titulo: ""
     property string fuente: "JetBrainsMono Nerd Font"
+    property bool conAtras: true
     default property alias derecha: filaDer.data
     signal atras()
 
@@ -15,6 +16,7 @@ Item {
 
     Boton {
         id: btnAtras
+        visible: enc.conAtras
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
         tema: enc.tema
@@ -23,8 +25,8 @@ Item {
     }
 
     Text {
-        anchors.left: btnAtras.right
-        anchors.leftMargin: 6
+        anchors.left: enc.conAtras ? btnAtras.right : parent.left
+        anchors.leftMargin: enc.conAtras ? 6 : 0
         anchors.verticalCenter: parent.verticalCenter
         text: enc.titulo
         font.family: enc.fuente

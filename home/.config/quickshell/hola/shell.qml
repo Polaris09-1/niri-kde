@@ -24,13 +24,25 @@ Scope {
 
     // ===== Ajustes =====
     // Paneles al pasar el cursor (hora, campanita y píldora)
-    property bool abrirAlPasar: true
-    property int esperaAbrir: 60         // ms con el cursor sobre el botón antes de abrir
-    property int esperaCerrar: 150       // ms fuera del botón y del panel antes de cerrar
+    // Los valores de aquí son los de fábrica; la app de Ajustes guarda los cambios en ajustes/ajustes.json
+    property var conf: ({})
+    function opc(clave, fabrica) { var v = root.conf[clave]; return v !== undefined ? v : fabrica }
+    FileView {
+        id: archivoConf
+        path: Quickshell.env("HOME") + "/.config/quickshell/ajustes/ajustes.json"
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: { try { root.conf = JSON.parse(text()) || ({}) } catch (e) { root.conf = ({}) } }
+    }
+    readonly property bool abrirAlPasar: root.opc("barra.abrirAlPasar", true)
+    readonly property int esperaAbrir: root.opc("barra.esperaAbrir", 60)      // ms con el cursor sobre el botón antes de abrir
+    readonly property int esperaCerrar: root.opc("barra.esperaCerrar", 150)   // ms fuera del botón y del panel antes de cerrar
+    readonly property bool verMusica: root.opc("barra.musica", true)
     // Pantalla completa (estilo macOS): la barra se esconde y deja de reservar su espacio; baja al
     // acercar el mouse al borde de arriba (mismos tiempos que los paneles: esperaAbrir/esperaCerrar)
-    property bool esconderEnPantallaCompleta: true
-    property int altoSensor: 3           // px del borde superior que hacen bajar la barra
+    readonly property bool esconderEnPantallaCompleta: root.opc("barra.esconderPC", true)
+    readonly property int altoSensor: root.opc("barra.altoSensor", 3)   // px del borde superior que hacen bajar la barra
     property string fuente: "JetBrainsMono Nerd Font"
     property int altoIsla: 38
     property real opacidadIsla: 0.85
@@ -73,7 +85,9 @@ Scope {
     Reproduciendo {
         id: rep
         audio: root.audioActivo
-        pausarOndas: root.barraOculta || root.sesionBloqueada
+        pausarOndas: root.barraOculta || root.sesionBloqueada || !root.verMusica
+        ondasReales: root.opc("musica.ondasReales", true)
+        esperaOcultar: root.opc("musica.esperaOcultar", 10) * 1000
         retener: pildoraMusica.cursorDentro
         salida: root.sink
     }
@@ -448,6 +462,37 @@ Scope {
         interval: root.esperaCerrar
         onTriggered: if (root.debeCerrar) root.panel = ""
     }
+    // ===== Monitores: aviso al conectar o desconectar =====
+    // Quickshell avisa de cambios en las pantallas; niri dice cuáles siguen conectadas (una apagada sigue en su lista,
+    // así que apagarla desde Ajustes no cuenta como desconectar).
+    property var monitores: null         // { conector: "Marca Modelo" }; null = aún sin leer (arrancar no avisa)
+    Connections {
+        target: Quickshell
+        function onScreensChanged() { leerMonitores.restart() }
+    }
+    Timer { id: leerMonitores; interval: 800; onTriggered: pMonitores.running = true }   // un monitor tarda en aparecer
+    Process {
+        id: pMonitores
+        command: ["niri", "msg", "-j", "outputs"]
+        running: true
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var d
+                try { d = JSON.parse(text) } catch (e) { return }
+                var ahora = {}
+                Object.keys(d).forEach(k => ahora[k] = [d[k].make, d[k].model].filter(x => !!x).join(" ") || k)
+                var antes = root.monitores
+                root.monitores = ahora
+                if (!antes) return
+                var script = Quickshell.env("HOME") + "/.local/bin/ajustes-monitor-aviso.sh"
+                Object.keys(ahora).filter(k => !(k in antes)).forEach(k =>
+                    root.ejecutar([script, "Monitor conectado", ahora[k] + " (" + k + ")"]))
+                Object.keys(antes).filter(k => !(k in ahora)).forEach(k =>
+                    root.ejecutar([script, "Monitor desconectado", antes[k] + " (" + k + ")"]))
+            }
+        }
+    }
+
     // ===== Pantalla completa: barra escondida que baja con el cursor =====
     PantallaCompleta { id: pcompleta }
     readonly property string salidaBarra: ventana.screen ? ventana.screen.name : ""
@@ -545,6 +590,12 @@ Scope {
         function calendario(): string { root.alternar("calendario"); return root.panel }
         // Panel de notificaciones (como el clic en la campanita)
         function campana(): string { root.alternar("avisos"); return root.panel }
+        // Lo que la barra está usando de la app de Ajustes
+        function ajustes(): string {
+            return JSON.stringify({ conf: root.conf, esperaAbrir: root.esperaAbrir, esperaCerrar: root.esperaCerrar,
+                altoSensor: root.altoSensor, abrirAlPasar: root.abrirAlPasar, verMusica: root.verMusica,
+                islaIzq: islaIzq.visible, campana: campana.visible, esperaOcultar: rep.esperaOcultar })
+        }
         // Estado de la píldora de música
         function musica(): string {
             return JSON.stringify({ presente: rep.presente, sonando: rep.sonando, expandida: pildoraMusica.expandida,
@@ -640,6 +691,7 @@ Scope {
             else if (v !== "info" && v !== "") luz.ponerModo(v)
             return JSON.stringify(luz.info())
         }
+        function ubicacionNocturna(lat: real, lon: real): string { luz.ponerUbicacion(lat, lon); return "ok" }
         function temperaturaNocturna(k: int): string { luz.ponerTemperatura(k); return String(luz.temperatura) }
         // Límite de carga: si | no | info
         function bateriaLimite(v: string): string {
@@ -798,9 +850,9 @@ Scope {
         // medía aún escondida arriba (fuera de la ventana) y la barra se quedaba sin recibir el cursor.
         // Así la máscara está siempre en la posición final de las islas, también durante la bajada.
         property Region regionIslas: Region {
-            Region { x: islaIzq.x; y: islaIzq.y; width: islaIzq.width; height: islaIzq.height }
+            Region { x: islaIzq.x; y: islaIzq.y; width: islaIzq.visible ? islaIzq.width : 0; height: islaIzq.height }
             Region { x: islaReloj.x; y: islaReloj.y; width: islaReloj.width; height: islaReloj.height }
-            Region { x: pildoraMusica.x; y: pildoraMusica.y; width: rep.presente ? pildoraMusica.width : 0; height: pildoraMusica.height }
+            Region { x: pildoraMusica.x; y: pildoraMusica.y; width: rep.presente && root.verMusica ? pildoraMusica.width : 0; height: pildoraMusica.height }
             Region { x: islaDer.x; y: islaDer.y; width: islaDer.width; height: islaDer.height }
         }
         property Region regionSensor: Region { x: 0; y: 0; width: ventana.width; height: root.altoSensor }
@@ -841,6 +893,7 @@ Scope {
                 // ---------- Isla izquierda: workspaces + ventana activa ----------
                 Rectangle {
                     id: islaIzq
+                    visible: root.opc("barra.islaIzq", true)
                     anchors.left: parent.left
                     anchors.leftMargin: 10
                     anchors.top: parent.top
@@ -904,7 +957,7 @@ Scope {
                         // Ventana activa: clic abre la vista general de niri
                         Boton {
                             anchors.verticalCenter: parent.verticalCenter
-                            visible: root.tituloVentana !== ""
+                            visible: root.tituloVentana !== "" && root.opc("barra.titulo", true)
                             tema: tema
                             imagen: root.iconoApp(root.appVentana)
                             texto: root.tituloVentana
@@ -925,7 +978,8 @@ Scope {
                     s: root
                     tema: tema
                     simEncima: root.simCursor === "musica"
-                    disponible: islaReloj.x - 8 - (islaIzq.x + islaIzq.width) - 8
+                    disponible: islaReloj.x - 8 - (islaIzq.visible ? islaIzq.x + islaIzq.width + 8 : 10)
+                    habilitada: root.verMusica
                     onAbrir: root.alternar("calendario", pildoraMusica)
                 }
 
@@ -955,12 +1009,13 @@ Scope {
                             tema: tema
                             activo: root.panel === "calendario"
                             icono: Qt.formatDateTime(reloj.date, "hh:mm")
-                            texto: reloj.date.toLocaleDateString(Qt.locale("es_EC"), "ddd d MMM")
+                            texto: root.opc("barra.fecha", true) ? reloj.date.toLocaleDateString(Qt.locale("es_EC"), "ddd d MMM") : ""
                             onClic: root.alternar("calendario")
                         }
                         // Campanita (siempre visible): tachada = No molestar; con número = avisos sin ver
                         Boton {
                             id: campana
+                            visible: root.opc("barra.campana", true)
                             tema: tema
                             activo: root.panel === "avisos"
                             icono: root.ic(avisos.noMolestar ? 0xF009B : avisos.sinLeer > 0 ? 0xF116B : 0xF009C)
@@ -996,7 +1051,7 @@ Scope {
                         // Bandeja del sistema (solo si hay iconos)
                         Row {
                             anchors.verticalCenter: parent.verticalCenter
-                            visible: SystemTray.items.values.length > 0
+                            visible: SystemTray.items.values.length > 0 && root.opc("barra.bandeja", true)
                             spacing: 2
                             leftPadding: 4
 
@@ -1098,7 +1153,7 @@ Scope {
                         Rectangle {
                             id: indicadorCafeina
                             anchors.verticalCenter: parent.verticalCenter
-                            visible: root.cafeina
+                            visible: root.cafeina && root.opc("barra.cafeina", true)
                             width: 30
                             height: 30
                             radius: 15
@@ -1145,18 +1200,21 @@ Scope {
                                 }
 
                                 Text {
+                                    visible: root.opc("barra.iconoWifi", true)
                                     text: root.iconoWifi()
                                     font.family: root.fuente
                                     font.pixelSize: 15
                                     color: tema.primary
                                 }
                                 Text {
+                                    visible: root.opc("barra.iconoVolumen", true)
                                     text: root.iconoVolumen()
                                     font.family: root.fuente
                                     font.pixelSize: 15
                                     color: tema.primary
                                 }
                                 Text {
+                                    visible: root.opc("barra.iconoBateria", true)
                                     text: root.iconoBateria()
                                     font.family: root.fuente
                                     font.pixelSize: 15
@@ -1203,9 +1261,9 @@ Scope {
         // a sus botones aunque haya un panel abierto encima
         mask: Region {
             item: raizCapa
-            Region { x: islaIzq.x; y: islaIzq.y; width: islaIzq.width; height: islaIzq.height; intersection: Intersection.Subtract }
+            Region { x: islaIzq.x; y: islaIzq.y; width: islaIzq.visible ? islaIzq.width : 0; height: islaIzq.height; intersection: Intersection.Subtract }
             Region { x: islaReloj.x; y: islaReloj.y; width: islaReloj.width; height: islaReloj.height; intersection: Intersection.Subtract }
-            Region { x: pildoraMusica.x; y: pildoraMusica.y; width: rep.presente ? pildoraMusica.width : 0; height: pildoraMusica.height; intersection: Intersection.Subtract }
+            Region { x: pildoraMusica.x; y: pildoraMusica.y; width: rep.presente && root.verMusica ? pildoraMusica.width : 0; height: pildoraMusica.height; intersection: Intersection.Subtract }
             Region { x: islaDer.x; y: islaDer.y; width: islaDer.width; height: islaDer.height; intersection: Intersection.Subtract }
         }
 
@@ -1308,7 +1366,11 @@ Scope {
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 2
-                            // Cámara: capturas y grabación · ⏻: energía
+                            // Engranaje: app de Ajustes · cámara: capturas y grabación · ⏻: energía
+                            Boton {
+                                tema: tema; icono: root.ic(0xF0493)
+                                onClic: { root.panel = ""; root.ejecutar([Quickshell.env("HOME") + "/.local/bin/ajustes-abrir.sh"]) }
+                            }
                             Boton { tema: tema; icono: root.ic(0xF0100); onClic: root.pagina = "capturas" }
                             Boton { tema: tema; icono: root.ic(0xF0425); onClic: root.pagina = "energia" }
                         }
@@ -1599,7 +1661,8 @@ Scope {
                                 text: root.cafeina ? "No se bloquea ni se suspende solo"
                                     : rep.sonando ? "Reproduciendo: " + rep.titulo
                                     : root.mediosActivos.length ? "Reproduciendo: " + root.mediosActivos.join(", ")
-                                    : "Se bloquea tras 10 min sin uso"
+                                    : root.opc("energia.bloquearMin", 10) === 0 ? "No se bloquea solo"
+                                    : "Se bloquea tras " + root.opc("energia.bloquearMin", 10) + " min sin uso"
                                 font.family: root.fuente
                                 font.pixelSize: 10
                                 color: root.alfa(tema.surfaceText, 0.65)

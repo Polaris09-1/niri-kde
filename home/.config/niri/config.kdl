@@ -22,7 +22,7 @@ input {
         }
 
         // Enable numlock on startup, omitting this setting disables it.
-        numlock
+        // numlock: lo lleva ajustes.kdl (app de Ajustes)
     }
 
     // Next sections include libinput settings.
@@ -30,12 +30,11 @@ input {
     // All commented-out settings here are examples, not defaults.
     touchpad {
         // off
-        tap
+        // tap y natural-scroll: los lleva ajustes.kdl (app de Ajustes). Un flag de input no se puede apagar desde un include
         // dwt
         // dwtp
         // drag false
         // drag-lock
-        natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
         // scroll-method "two-finger"
@@ -371,6 +370,7 @@ binds {
     // ESCRITORIO_TERMINAL: fastfetch solo sale en terminales abiertas por ti (ver ~/.config/bash/escritorio.sh)
     Mod+T hotkey-overlay-title="Open a Terminal: alacritty" { spawn "env" "ESCRITORIO_TERMINAL=1" "alacritty"; }
     Mod+D hotkey-overlay-title="Run an Application: fuzzel" { spawn "fuzzel"; }
+    Mod+S hotkey-overlay-title="Ajustes" { spawn "@HOME@/.local/bin/ajustes-abrir.sh"; }
     // Bloqueo propio (2026-11-01, puntos 2+7): módulo Quickshell "bloqueo" (swaylock si no corre)
     Super+Alt+L hotkey-overlay-title="Bloquear la pantalla" { spawn "@HOME@/.local/bin/bloquear.sh"; }
     // Rescate: si la pantalla de bloqueo se colgara, cierra el módulo y bloquea con swaylock
@@ -728,3 +728,12 @@ layer-rule {
         xray false
     }
 }
+
+// App de Ajustes: ventana flotante; lo que cambies desde ella va en ajustes.kdl (al final, para que mande)
+window-rule {
+    match app-id="^org\\.quickshell$" title="^Ajustes$"
+    open-floating true
+    default-column-width { fixed 1040; }
+    default-window-height { fixed 700; }
+}
+include optional=true "ajustes.kdl"

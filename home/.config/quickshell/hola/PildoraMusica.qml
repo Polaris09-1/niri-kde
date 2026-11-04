@@ -11,6 +11,7 @@ Rectangle {
     property var tema
     property real disponible: 320       // sitio hasta la isla de la izquierda
     property bool simEncima: false      // solo pruebas por IPC
+    property bool habilitada: true      // se puede apagar desde Ajustes
     signal abrir()
 
     readonly property bool cursorDentro: sensor.hovered || p.simEncima
@@ -33,10 +34,10 @@ Rectangle {
     color: p.s.alfa(p.tema.surface, p.s.opacidadIsla)
     border.color: p.s.alfa(p.tema.primary, 0.5)
     border.width: 1.5
-    opacity: p.rep.presente ? 1 : 0
+    opacity: p.rep.presente && p.habilitada ? 1 : 0
     visible: opacity > 0.01
     transform: Translate {
-        x: p.rep.presente ? 0 : 12
+        x: p.rep.presente && p.habilitada ? 0 : 12
         Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
     }
     Behavior on width { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }

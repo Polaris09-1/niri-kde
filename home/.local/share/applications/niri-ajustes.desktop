@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Ajustes
+GenericName=Configuración del escritorio
+Comment=Apariencia, barra, sonido, teclado, mouse y más
+Exec=@HOME@/.local/bin/ajustes-abrir.sh
+Icon=preferences-system
+Terminal=false
+Categories=Settings;
+Keywords=configuración;preferencias;settings;

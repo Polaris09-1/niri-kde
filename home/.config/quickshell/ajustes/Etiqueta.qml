@@ -1,0 +1,1 @@
+../hola/Etiqueta.qml

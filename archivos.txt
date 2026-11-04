@@ -16,6 +16,7 @@
 .config/fastfetch/config.jsonc
 .config/bash/escritorio.sh
 .local/bin/wallpaper.sh
+.local/bin/fondo-login.sh
 .local/bin/fondo-fotograma.sh
 .local/bin/aplicar-colores-apps.sh
 .local/bin/bloquear.sh

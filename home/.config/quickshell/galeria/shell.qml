@@ -3,30 +3,41 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
-import QtQuick.Effects
 import Qt.labs.folderlistmodel
 
-// Galería de fondos: carrusel infinito (tarjeta grande + franjas) con vista previa a pantalla completa
-// (vídeo/GIF animado en la tarjeta del centro y en el fondo grande)
-// y vista previa de la paleta de matugen antes de aplicar.
+// Galería de fondos: carrusel infinito, ancho y centrado. Tarjetas laterales en paralelogramo (solo se
+// inclina el marco) que pierden opacidad y nitidez con la distancia; la del centro se endereza y crece.
+// Detrás, la imagen fija difuminada del fondo elegido. Vídeo/GIF solo en la tarjeta del centro.
+// Debajo, el nombre, la paleta de matugen y la maqueta de la barra.
 Scope {
     id: root
 
     // ===== Ajustes =====
     property string carpeta: Quickshell.env("HOME") + "/Pictures/wallpapers"
     property string script: Quickshell.env("HOME") + "/.local/bin/wallpaper.sh"
-    property int anchoTarjeta: 440          // ancho de la tarjeta del centro
-    readonly property real altoTarjeta: anchoTarjeta * 9 / 16
-    property int anchoFranja: 64            // tarjetas de los costados: franjas verticales
-    property int ensancheFranja: 26         // cuánto se ensancha una franja al pasar el cursor
-    property int hueco: 14                  // separación entre tarjetas
-    property int franjasPorLado: 6          // como máximo (sin repetir fondos)
-    property int duracionMovimiento: 420
+    // Forma del carrusel según la distancia al centro (0, 1, 2, 3, 4 tarjetas), en px a 1920x1080.
+    // Entre dos valores se interpola: cada tarjeta cambia de forma de manera continua al moverse.
+    readonly property var tablaX:          [0, 560, 793, 984, 1141]
+    readonly property var tablaAncho:      [760, 240, 195, 160, 130]
+    readonly property var tablaAlto:       [428, 320, 265, 215, 175]
+    readonly property var tablaSesgo:      [0, 0.24, 0.24, 0.24, 0.24]
+    readonly property var tablaRadio:      [26, 20, 18, 16, 14]
+    readonly property var tablaOpacidad:   [1, 0.9, 0.62, 0.34, 0]
+    readonly property var tablaDesenfoque: [0, 0.8, 1.7, 2.6, 3.4]
+    readonly property real anchoCentro: tablaAncho[0] * root.u
+    readonly property real altoCentro: tablaAlto[0] * root.u
+    readonly property real margenSombra: 36 * root.u
+    property int tarjetasPorLado: 4         // como máximo (sin repetir fondos)
+    property int duracionMovimiento: 450
+    property real desenfoqueFondo: 6        // niveles de mipmap de la imagen de atrás
+    property real tinteFondo: 0.5           // cuánto oscurece el color de superficie al fondo
 
     // ===== Estado =====
     property bool abierto: false
     property bool aplicando: false
+    property var comandoAplicar: []
     property string actual: ""              // fondo aplicado ahora
+    readonly property real u: Math.max(0.5, Math.min(ventana.width / 1920, ventana.height / 1080))
     // ===== Carrusel infinito =====
     // "objetivo" es un índice SIN límite (… -1, 0, 1, 2 …); la tarjeta real es objetivo mod n.
     // Así, después del último viene el primero (y al revés) sin rebobinar: el carrusel solo
@@ -36,11 +47,15 @@ Scope {
     property bool animar: true
     readonly property int indice: root.n > 0 ? root.mod(root.objetivo, root.n) : -1
     // Ranuras de tarjetas: nunca más que fondos (con 1 o 2 no se repite ninguno)
-    readonly property int ranuras: Math.min(root.n, 2 * root.franjasPorLado + 1)
+    readonly property int ranuras: Math.min(root.n, 2 * root.tarjetasPorLado + 1)
     // Ventana visible alrededor de pos: [pos - margen, pos - margen + ranuras)
     readonly property real margenVentana: Math.floor((root.ranuras - 1) / 2) + 0.5
     property int version: 0                 // sube al cambiar la carpeta (get() no avisa)
     function mod(a, m) { return ((a % m) + m) % m }
+    function tabla(t, a) {
+        var i = Math.min(Math.floor(a), t.length - 2)
+        return t[i] + (t[i + 1] - t[i]) * (a - i)
+    }
     function rutaEn(i) { root.version; return i >= 0 && i < carpetaModelo.count ? carpetaModelo.get(i, "filePath") : "" }
     function mover(paso) { if (root.n > 1) root.objetivo += paso }
     // Ir a la tarjeta i por el camino más corto (dando la vuelta si hace falta)
@@ -52,9 +67,8 @@ Scope {
     }
 
     // La tarjeta seleccionada (la del centro): de ella salen el título, la paleta,
-    // la vista previa grande y el contador. Pasar el cursor por otra NO cambia nada.
+    // el fondo difuminado y el contador. Pasar el cursor por otra NO cambia nada.
     property string elegido: root.rutaEn(root.indice)
-    // Lo que se previsualiza: el que está bajo el ratón, o el del centro
     property string vista: elegido
 
     property var paletas: ({})              // ruta -> colores de matugen
@@ -71,7 +85,7 @@ Scope {
 
     Colors { id: tema }
 
-    // Colores que se muestran: los del fondo previsualizado (animados)
+    // Colores que se muestran: los del fondo elegido (animados)
     QtObject {
         id: c
         property color surface: root.pal ? root.pal.surface : tema.surface
@@ -91,7 +105,8 @@ Scope {
     function conAlfa(col, a) { return Qt.rgba(col.r, col.g, col.b, a) }
 
     function bonito(nombre) {
-        return nombre.replace(/[-_]+/g, " ").replace(/\b\w/g, l => l.toUpperCase())
+        // Sin la marca de la web de descarga al final ("-moewalls-com")
+        return nombre.replace(/(-mp4)?[-_]+\w+[-_]com$/i, "").replace(/[-_]+/g, " ").replace(/\b\w/g, l => l.toUpperCase())
     }
 
     // ===== Atajo: qs -c galeria ipc call galeria toggle =====
@@ -117,10 +132,24 @@ Scope {
                                     indice: root.indice, objetivo: root.objetivo, pos: carrusel.pos,
                                     ranuras: root.ranuras, animada: previaAnim.info(), elegido: root.elegido,
                                     vista: root.vista, titulo: titulo.text, contador: contador.text,
-                                    previa: (previa.usarA ? imgA : imgB).source.toString(),
+                                    previa: (fondoAtras.usarA ? imgA : imgB).source.toString(),
                                     paleta: root.pal ? root.pal.primary : null,
                                     fotogramas: root.fotogramas, transicion: ajustesFondo.transicion,
                                     duracion: ajustesFondo.duracion })
+        }
+        // Para probar: forma actual de cada tarjeta visible, ordenadas de izquierda a derecha
+        function tarjetas(): string {
+            var l = []
+            for (var i = 0; i < repetidor.count; i++) {
+                var t = repetidor.itemAt(i)
+                if (!t || !t.visible) continue
+                l.push({ logica: t.logica, d: +t.d.toFixed(3), cx: Math.round(t.cx), ancho: Math.round(t.ancho),
+                         alto: Math.round(t.alto), sesgo: +t.sesgo.toFixed(3), opacidad: +t.opacity.toFixed(2),
+                         desenfoque: +t.desenfoque.toFixed(2),
+                         archivo: t.filePath.split("/").pop() })
+            }
+            l.sort((a, b) => a.d - b.d)
+            return JSON.stringify(l)
         }
     }
 
@@ -147,7 +176,7 @@ Scope {
     }
 
     function aplicarCentro() {
-        var p = carrusel.mapToItem(escena, carrusel.width / 2, 16 + root.altoTarjeta / 2)
+        var p = carrusel.mapToItem(escena, carrusel.width / 2, carrusel.height / 2)
         aplicar(root.elegido, p.x, p.y)
     }
 
@@ -155,7 +184,7 @@ Scope {
     function aplicar(ruta, x, y) {
         if (root.aplicando || ruta === "") return
         root.aplicando = true
-        pAplicar.command = [root.script, ruta, "-", String(Math.round(x)), String(Math.round(y))]
+        root.comandoAplicar = [root.script, ruta, "-", String(Math.round(x)), String(Math.round(y))]
         // Primero se desvanece la galería, luego el fondo cambia con su transición
         root.cerrar()
         lanzarAplicar.restart()
@@ -164,17 +193,15 @@ Scope {
     Timer {
         id: lanzarAplicar
         interval: 230
-        onTriggered: pAplicar.running = true
+        // Separado de la galería (nunca un Process hijo): matugen reescribe Colors.qml, la galería
+        // se recarga y una recarga mata a sus procesos hijos, con wallpaper.sh a medias.
+        onTriggered: Quickshell.execDetached(root.comandoAplicar)
     }
 
     Timer {
         id: esconder
         interval: 450
         onTriggered: ventana.visible = false
-    }
-
-    Process {
-        id: pAplicar
     }
 
     // Fondo aplicado actualmente
@@ -227,7 +254,7 @@ Scope {
             }
         }
     }
-    onFotogramasChanged: { calcularPaleta.restart(); previa.mostrar(root.vista) }
+    onFotogramasChanged: { calcularPaleta.restart(); fondoAtras.mostrar(root.vista) }
 
     // ===== Transición del fondo (la usa el módulo "fondo") =====
     FileView {
@@ -308,86 +335,114 @@ Scope {
             anchors.fill: parent
             opacity: root.abierto ? 1 : 0
             Behavior on opacity {
-                NumberAnimation { duration: root.aplicando ? 220 : 400; easing.type: Easing.OutCubic }
+                NumberAnimation { duration: root.aplicando ? 220 : 300; easing.type: Easing.OutCubic }
             }
 
-            // ---------- Vista previa a pantalla completa (con fundido) ----------
+            // ---------- Detrás: imagen fija difuminada del fondo elegido (con fundido) ----------
+            // Va en una capa propia a media resolución: solo se vuelve a pintar durante el fundido,
+            // no en cada fotograma del vídeo de la tarjeta del centro.
             Item {
-                id: previa
+                id: fondoAtras
                 anchors.fill: parent
-                clip: true
+                layer.enabled: true
+                layer.textureSize: Qt.size(Math.ceil(width / 2), Math.ceil(height / 2))
+                layer.smooth: true
                 property bool usarA: true
                 property string cargando: ""
 
                 function mostrar(ruta) {
                     var url = root.urlDe(ruta)
                     if (url === "") return
-                    var visible = previa.usarA ? imgA : imgB
+                    var visible = fondoAtras.usarA ? imgA : imgB
                     if (visible.source.toString() === url) return
-                    var oculta = previa.usarA ? imgB : imgA
-                    previa.cargando = url
+                    var oculta = fondoAtras.usarA ? imgB : imgA
+                    fondoAtras.cargando = url
                     oculta.source = url
-                    if (oculta.status === Image.Ready) previa.usarA = !previa.usarA
+                    if (oculta.status === Image.Ready) fondoAtras.usarA = !fondoAtras.usarA
                 }
 
                 Connections {
                     target: root
-                    function onVistaChanged() { previa.mostrar(root.vista) }
+                    function onVistaChanged() { fondoAtras.mostrar(root.vista) }
                 }
 
-                // Imagen fija, sin zoom ni movimiento
-                Item {
+                Rectangle { anchors.fill: parent; color: c.surface }
+
+                Image {
+                    id: imgA
+                    visible: false
+                    asynchronous: true
+                    mipmap: true
+                    sourceSize.width: 640
+                    onStatusChanged: if (status === Image.Ready && source.toString() === fondoAtras.cargando && !fondoAtras.usarA) fondoAtras.usarA = true
+                }
+                Image {
+                    id: imgB
+                    visible: false
+                    asynchronous: true
+                    mipmap: true
+                    sourceSize.width: 640
+                    onStatusChanged: if (status === Image.Ready && source.toString() === fondoAtras.cargando && fondoAtras.usarA) fondoAtras.usarA = false
+                }
+
+                Forma {
                     anchors.fill: parent
-
-                    Image {
-                        id: imgA
-                        anchors.fill: parent
-                        fillMode: Image.PreserveAspectCrop
-                        asynchronous: true
-                        sourceSize.width: ventana.width
-                        opacity: previa.usarA ? 1 : 0
-                        Behavior on opacity {
-                            NumberAnimation { duration: 550; easing.type: Easing.InOutQuad }
-                        }
-                        onStatusChanged: if (status === Image.Ready && source.toString() === previa.cargando && !previa.usarA) previa.usarA = true
-                    }
-
-                    Image {
-                        id: imgB
-                        anchors.fill: parent
-                        fillMode: Image.PreserveAspectCrop
-                        asynchronous: true
-                        sourceSize.width: ventana.width
-                        opacity: previa.usarA ? 0 : 1
-                        Behavior on opacity {
-                            NumberAnimation { duration: 550; easing.type: Easing.InOutQuad }
-                        }
-                        onStatusChanged: if (status === Image.Ready && source.toString() === previa.cargando && previa.usarA) previa.usarA = false
-                    }
+                    fuente: imgA
+                    caja: Qt.size(width + 8, height + 8)
+                    relacion: imgA.implicitHeight > 0 ? imgA.implicitWidth / imgA.implicitHeight : 16 / 9
+                    desenfoque: root.desenfoqueFondo
+                    opacity: fondoAtras.usarA ? 1 : 0
+                    visible: opacity > 0
+                    Behavior on opacity { NumberAnimation { duration: 450; easing.type: Easing.InOutQuad } }
                 }
-
-                // Vídeo/GIF en bucle y sin sonido encima de su fotograma (aparece con fundido
-                // cuando ya hay imagen; se detiene al cerrar la galería)
-                Item {
+                Forma {
                     anchors.fill: parent
-                    opacity: previaAnim.listo && previaAnim.reproduciendo === root.vista ? 1 : 0
-                    Behavior on opacity {
-                        NumberAnimation { duration: 350; easing.type: Easing.InOutQuad }
-                    }
-                    PreviaAnimada {
-                        id: previaAnim
-                        anchors.fill: parent
-                        ruta: root.abierto && root.esAnimado(root.vista) ? root.vista : ""
-                        anchoV: ventana.width > 0 ? Math.round(ventana.width) : 1920
-                        altoV: ventana.height > 0 ? Math.round(ventana.height) : 1080
-                    }
+                    fuente: imgB
+                    caja: Qt.size(width + 8, height + 8)
+                    relacion: imgB.implicitHeight > 0 ? imgB.implicitWidth / imgB.implicitHeight : 16 / 9
+                    desenfoque: root.desenfoqueFondo
+                    opacity: fondoAtras.usarA ? 0 : 1
+                    visible: opacity > 0
+                    Behavior on opacity { NumberAnimation { duration: 450; easing.type: Easing.InOutQuad } }
                 }
 
-                // Clic en el fondo: cerrar
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: root.cerrar()
+                // Tinte: hace legible el texto sea cual sea la imagen
+                Rectangle { anchors.fill: parent; color: root.conAlfa(c.surface, root.tinteFondo) }
+            }
+
+            // Clic en un hueco: cerrar. Rueda en cualquier parte: mover
+            MouseArea {
+                anchors.fill: parent
+                onClicked: root.cerrar()
+            }
+            property real acumulado: 0
+            WheelHandler {
+                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                onWheel: ev => {
+                    var v = Math.abs(ev.angleDelta.x) > Math.abs(ev.angleDelta.y) ? ev.angleDelta.x : ev.angleDelta.y
+                    escena.acumulado += v
+                    while (escena.acumulado <= -120) { root.mover(1); escena.acumulado += 120 }
+                    while (escena.acumulado >= 120) { root.mover(-1); escena.acumulado -= 120 }
                 }
+            }
+
+            // ---------- Vídeo o GIF elegido: un solo decodificador, al tamaño de la tarjeta ----------
+            // Solo se pinta dentro de "fuenteVideo" (hideSource) y lo muestra la tarjeta del centro.
+            PreviaAnimada {
+                id: previaAnim
+                width: Math.max(1, Math.round(root.anchoCentro))
+                height: Math.max(1, Math.round(root.altoCentro))
+                ruta: root.abierto && root.esAnimado(root.vista) ? root.vista : ""
+                anchoV: ventana.width > 0 ? Math.round(ventana.width) : 1920
+                altoV: ventana.height > 0 ? Math.round(ventana.height) : 1080
+            }
+            ShaderEffectSource {
+                id: fuenteVideo
+                visible: false
+                sourceItem: previaAnim
+                hideSource: true
+                live: previaAnim.reproduciendo !== ""
+                textureSize: Qt.size(previaAnim.width, previaAnim.height)
             }
 
             // ---------- Todo lo de encima (se esconde al aplicar) ----------
@@ -396,233 +451,42 @@ Scope {
                 anchors.fill: parent
                 opacity: root.aplicando ? 0 : 1
                 Behavior on opacity {
-                    NumberAnimation { duration: 350 }
+                    NumberAnimation { duration: 200 }
                 }
 
-                // Degradado inferior para que se lea el texto
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.bottom: parent.bottom
-                    height: parent.height * 0.7
-                    gradient: Gradient {
-                        GradientStop { position: 0.0; color: "transparent" }
-                        GradientStop { position: 0.55; color: root.conAlfa(c.surface, 0.6) }
-                        GradientStop { position: 1.0; color: root.conAlfa(c.surface, 0.92) }
-                    }
-                }
-
-                // ----- Encabezado -----
-                Column {
-                    id: encabezado
-                    anchors.left: parent.left
-                    anchors.leftMargin: 70
+                // ----- Encabezado: contador sobre la tarjeta del centro -----
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
                     anchors.bottom: carrusel.top
-                    anchors.bottomMargin: 10
-                    spacing: 10
-                    opacity: root.abierto ? 1 : 0
-                    transform: Translate {
-                        x: root.abierto ? 0 : -60
-                        Behavior on x {
-                            NumberAnimation { duration: 600; easing.type: Easing.OutBack }
-                        }
-                    }
-                    Behavior on opacity {
-                        NumberAnimation { duration: 500 }
-                    }
-
-                    Row {
-                        spacing: 12
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "FONDOS"
-                            color: c.primary
-                            font.pixelSize: 13
-                            font.bold: true
-                            font.letterSpacing: 6
-                        }
-                        Rectangle {
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: contador.width + 16
-                            height: 22
-                            radius: 11
-                            color: root.conAlfa(c.primary, 0.2)
-                            border.color: c.primary
-                            Text {
-                                id: contador
-                                anchors.centerIn: parent
-                                text: (root.indice + 1) + " / " + root.n
-                                color: c.primary
-                                font.pixelSize: 11
-                                font.bold: true
-                            }
-                        }
-                    }
-
-                    // Nombre del fondo (cambia con un pequeño salto)
+                    anchors.bottomMargin: 16 * root.u - root.margenSombra
+                    spacing: 12
                     Text {
-                        id: titulo
-                        property string texto: root.bonito(root.vista.split("/").pop().replace(/\.[^.]+$/, ""))
-                        text: texto
-                        color: c.surfaceText
-                        font.pixelSize: 46
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "FONDOS"
+                        color: c.primary
+                        font.pixelSize: 13
                         font.bold: true
-                        style: Text.Raised
-                        styleColor: root.conAlfa("black", 0.4)
-                        onTextoChanged: saltoTitulo.restart()
-                        SequentialAnimation {
-                            id: saltoTitulo
-                            NumberAnimation { target: titulo; property: "opacity"; from: 0.2; to: 1; duration: 350 }
-                        }
+                        font.letterSpacing: 6
                     }
-
-                    // Paleta que generaría matugen
-                    Row {
-                        spacing: 14
-
-                        Repeater {
-                            model: [
-                                { n: "Primario", k: "primary" },
-                                { n: "Secundario", k: "secondary" },
-                                { n: "Terciario", k: "tertiary" },
-                                { n: "Superficie", k: "surface" },
-                                { n: "Texto", k: "surfaceText" }
-                            ]
-                            delegate: Column {
-                                required property var modelData
-                                required property int index
-                                spacing: 4
-                                Rectangle {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    width: 34
-                                    height: 34
-                                    radius: 17
-                                    color: c[modelData.k]
-                                    border.color: root.conAlfa(c.surfaceText, 0.5)
-                                    border.width: 1.5
-                                    scale: root.pal ? 1 : 0.6
-                                    Behavior on scale {
-                                        NumberAnimation { duration: 400 + index * 60; easing.type: Easing.OutBack; easing.overshoot: 3 }
-                                    }
-                                }
-                                Text {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    text: modelData.n
-                                    color: c.surfaceText
-                                    opacity: 0.7
-                                    font.pixelSize: 10
-                                }
-                            }
-                        }
-
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: !root.pal
-                            text: "calculando colores…"
-                            color: c.surfaceText
-                            opacity: 0.6
-                            font.italic: true
-                            font.pixelSize: 12
-                        }
-                    }
-                }
-
-                // ----- Maqueta de la barra con los colores nuevos -----
-                Column {
-                    anchors.right: parent.right
-                    anchors.rightMargin: 70
-                    anchors.bottom: carrusel.top
-                    anchors.bottomMargin: 18
-                    spacing: 8
-                    opacity: root.abierto ? 1 : 0
-                    transform: Translate {
-                        x: root.abierto ? 0 : 60
-                        Behavior on x {
-                            NumberAnimation { duration: 600; easing.type: Easing.OutBack }
-                        }
-                    }
-                    Behavior on opacity {
-                        NumberAnimation { duration: 500 }
-                    }
-
-                    Text {
-                        anchors.right: parent.right
-                        text: "Así se verá tu barra"
-                        color: c.surfaceText
-                        opacity: 0.7
-                        font.pixelSize: 11
-                    }
-
                     Rectangle {
-                        width: 340
-                        height: 46
-                        radius: 23
-                        color: root.conAlfa(c.surface, 0.85)
-                        border.color: root.conAlfa(c.primary, 0.6)
-                        border.width: 1.5
-
-                        Row {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: contador.width + 16
+                        height: 22
+                        radius: 11
+                        color: root.conAlfa(c.primary, 0.2)
+                        border.color: c.primary
+                        Text {
+                            id: contador
                             anchors.centerIn: parent
-                            spacing: 10
-
-                            Rectangle {
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: 32
-                                height: 32
-                                radius: 16
-                                color: c.primary
-                                Grid {
-                                    anchors.centerIn: parent
-                                    columns: 2
-                                    spacing: 2
-                                    Repeater {
-                                        model: 4
-                                        Rectangle { width: 5; height: 5; radius: 1.5; color: c.primaryText }
-                                    }
-                                }
-                            }
-
-                            Repeater {
-                                model: ["firefox", "Alacritty", "system-file-manager", "utilities-system-monitor", "multimedia-volume-control"]
-                                delegate: Item {
-                                    required property string modelData
-                                    required property int index
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: 36
-                                    height: 40
-                                    Rectangle {
-                                        visible: index === 1
-                                        anchors.centerIn: parent
-                                        width: 36
-                                        height: 36
-                                        radius: 11
-                                        color: root.conAlfa(c.primary, 0.25)
-                                        border.color: c.primary
-                                    }
-                                    Image {
-                                        anchors.centerIn: parent
-                                        width: 22
-                                        height: 22
-                                        sourceSize.width: 48
-                                        sourceSize.height: 48
-                                        source: Quickshell.iconPath(modelData, "application-x-executable")
-                                    }
-                                    Rectangle {
-                                        visible: index < 2
-                                        anchors.horizontalCenter: parent.horizontalCenter
-                                        anchors.bottom: parent.bottom
-                                        width: index === 1 ? 14 : 4
-                                        height: 3
-                                        radius: 1.5
-                                        color: index === 1 ? c.primary : c.surfaceText
-                                    }
-                                }
-                            }
+                            text: (root.indice + 1) + " / " + root.n
+                            color: c.primary
+                            font.pixelSize: 11
+                            font.bold: true
                         }
                     }
                 }
 
-                // ----- Carrusel infinito: tarjeta grande en el centro y franjas a los lados -----
+                // ----- Carrusel infinito -----
                 // Hay "ranuras" fijas (como mucho una por fondo). Cada ranura j muestra la tarjeta
                 // lógica L ≡ j (mód ranuras) que cae en la ventana visible alrededor de pos; al salir
                 // por un borde (ya transparente) reaparece por el otro con su siguiente tarjeta. Así
@@ -631,9 +495,8 @@ Scope {
                     id: carrusel
                     anchors.left: parent.left
                     anchors.right: parent.right
-                    anchors.bottom: ayudas.top
-                    anchors.bottomMargin: 16
-                    height: root.altoTarjeta + 110
+                    y: parent.height * 0.42 - height / 2
+                    height: root.altoCentro + 2 * root.margenSombra
 
                     property real pos: root.objetivo
                     Behavior on pos {
@@ -641,27 +504,16 @@ Scope {
                         NumberAnimation { duration: root.duracionMovimiento; easing.type: Easing.OutCubic }
                     }
 
-                    // Entrada desde abajo
+                    // Entrada: sube un poco mientras la galería aparece
                     transform: Translate {
-                        y: root.abierto ? 0 : 260
+                        y: root.abierto ? 0 : 36
                         Behavior on y {
-                            NumberAnimation { duration: 650; easing.type: Easing.OutBack; easing.overshoot: 1.2 }
-                        }
-                    }
-
-                    // Rueda: una tarjeta por "clic" de rueda; en touchpad suma el desplazamiento
-                    property real acumulado: 0
-                    WheelHandler {
-                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                        onWheel: ev => {
-                            var v = Math.abs(ev.angleDelta.x) > Math.abs(ev.angleDelta.y) ? ev.angleDelta.x : ev.angleDelta.y
-                            carrusel.acumulado += v
-                            while (carrusel.acumulado <= -120) { root.mover(1); carrusel.acumulado += 120 }
-                            while (carrusel.acumulado >= 120) { root.mover(-1); carrusel.acumulado -= 120 }
+                            NumberAnimation { duration: 350; easing.type: Easing.OutCubic }
                         }
                     }
 
                     Repeater {
+                        id: repetidor
                         model: root.ranuras
                         delegate: Item {
                             id: tarjeta
@@ -673,7 +525,8 @@ Scope {
                             readonly property int logica: index + nr * Math.ceil((carrusel.pos - m - index) / nr)
                             readonly property real d: logica - carrusel.pos
                             readonly property real ad: Math.abs(d)
-                            readonly property real t: Math.min(ad, 1)          // 0 = centro, 1 = franja
+                            readonly property real a: Math.min(ad, 4)
+                            readonly property real t: Math.min(ad, 1)          // 0 = centro, 1 = lateral
                             readonly property string filePath: root.rutaEn(root.mod(logica, root.n))
                             readonly property bool centro: logica === root.objetivo
                             readonly property bool sobre: zonaT.containsMouse
@@ -681,271 +534,179 @@ Scope {
                             // Distancia al borde de la ventana: se desvanece en el último medio paso
                             readonly property real borde: Math.min(d + m, (nr - m) - d)
 
-                            property real ensanche: sobre && !centro ? root.ensancheFranja : 0
-                            Behavior on ensanche {
-                                NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                            }
-                            // Ancho: de tarjeta grande (centro) a franja; el hueco entre vecinas no cambia
-                            readonly property real cx: (d < 0 ? -1 : 1)
-                                * (t * (root.anchoTarjeta / 2 + root.hueco + root.anchoFranja / 2)
-                                   + Math.max(ad - 1, 0) * (root.anchoFranja + root.hueco))
+                            // Forma: sale de las tablas según la distancia
+                            readonly property real ancho: root.tabla(root.tablaAncho, a) * root.u
+                            readonly property real alto: root.tabla(root.tablaAlto, a) * root.u
+                            readonly property real sesgo: root.tabla(root.tablaSesgo, a)
+                            readonly property real radio: root.tabla(root.tablaRadio, a) * root.u
+                            readonly property real cx: (d < 0 ? -1 : 1) * root.tabla(root.tablaX, a) * root.u
+                            // Al pasar el cursor por una lateral: más nítida y más visible
+                            property real realce: sobre && !centro ? 1 : 0
+                            Behavior on realce { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                            readonly property real desenfoque: Math.max(0, root.tabla(root.tablaDesenfoque, a) - realce * 0.8)
+                            readonly property real grosorBorde: 3 * root.u * (1 - t) + 1.5 * root.u * t
+                            readonly property real alfaBorde: Math.max(0, 1 - 2 * t) + 0.16 * t + realce * 0.5
+                            readonly property color colorBorde: t < 0.5 || realce > 0 ? c.primary : c.surfaceText
 
-                            width: root.anchoTarjeta - (root.anchoTarjeta - root.anchoFranja) * t + ensanche
-                            height: carrusel.height
+                            width: ancho + sesgo * alto + 2 * root.margenSombra
+                            height: alto + 2 * root.margenSombra
                             x: carrusel.width / 2 + cx - width / 2
-                            z: 100 - ad * 5 + (sobre ? 50 : 0)
-                            opacity: Math.max(0, Math.min(1, borde / 0.5)) * (1 - 0.07 * Math.min(Math.max(ad - 1, 0), 6))
+                            y: (carrusel.height - height) / 2
+                            z: 100 - ad * 5
+                            opacity: Math.max(0, Math.min(1, borde / 0.5))
+                                     * Math.min(1, root.tabla(root.tablaOpacidad, a) + realce * 0.1)
+                                     * cargada
                             visible: opacity > 0.01 && filePath !== ""
 
-                            // ----- La foto (redondeada, más oscura cuanto más franja) -----
-                            Item {
+                            // Aparece con fundido la primera vez que carga su imagen
+                            property real cargada: foto.status === Image.Ready ? 1 : 0
+                            Behavior on cargada { NumberAnimation { duration: 180 } }
+
+                            Image {
                                 id: foto
-                                width: parent.width
-                                height: root.altoTarjeta * (1 - 0.06 * tarjeta.t)
-                                y: 16 + (root.altoTarjeta - height) / 2
+                                visible: false
+                                asynchronous: true
+                                mipmap: true
+                                sourceSize.width: 960
+                                source: root.urlDe(tarjeta.filePath)
+                            }
 
-                                RectangularShadow {
-                                    anchors.fill: parent
-                                    radius: contenidoT.radio
-                                    blur: tarjeta.centro ? 36 : 18
-                                    spread: tarjeta.centro ? 2 : 0
-                                    offset.y: tarjeta.centro ? 0 : 8
-                                    color: tarjeta.centro ? root.conAlfa(c.primary, 0.55) : Qt.rgba(0, 0, 0, 0.5)
-                                }
+                            Forma {
+                                anchors.fill: parent
+                                fuente: foto
+                                caja: Qt.size(tarjeta.ancho, tarjeta.alto)
+                                sesgo: tarjeta.sesgo
+                                radio: tarjeta.radio
+                                desenfoque: tarjeta.desenfoque
+                                relacion: foto.implicitHeight > 0 ? foto.implicitWidth / foto.implicitHeight : 16 / 9
+                                grosorBorde: tarjeta.grosorBorde
+                                alfaBorde: tarjeta.alfaBorde
+                                colorBorde: tarjeta.colorBorde
+                                alfaSombra: 0.4
+                                alcanceSombra: root.margenSombra
+                                colorSombra: Qt.rgba(c.primary.r * (1 - tarjeta.t), c.primary.g * (1 - tarjeta.t), c.primary.b * (1 - tarjeta.t), 1)
+                            }
 
-                                Item {
-                                    id: contenidoT
-                                    anchors.fill: parent
-                                    readonly property real radio: 20 - 6 * tarjeta.t
+                            // Vídeo/GIF: solo en la tarjeta del centro (la imagen fija queda debajo)
+                            Forma {
+                                id: capaVideo
+                                anchors.fill: parent
+                                readonly property bool activa: tarjeta.centro && previaAnim.listo && previaAnim.reproduciendo === tarjeta.filePath
+                                fuente: fuenteVideo
+                                caja: Qt.size(tarjeta.ancho, tarjeta.alto)
+                                sesgo: tarjeta.sesgo
+                                radio: tarjeta.radio
+                                relacion: previaAnim.width / Math.max(1, previaAnim.height)
+                                grosorBorde: tarjeta.grosorBorde
+                                alfaBorde: tarjeta.alfaBorde
+                                colorBorde: tarjeta.colorBorde
+                                opacity: activa ? 1 : 0
+                                visible: opacity > 0
+                                Behavior on opacity { NumberAnimation { duration: 220 } }
+                            }
 
-                                    Image {
-                                        anchors.fill: parent
-                                        fillMode: Image.PreserveAspectCrop
-                                        asynchronous: true
-                                        sourceSize.width: 640
-                                        source: root.urlDe(tarjeta.filePath)
-                                    }
+                            // Insignias: solo en la del centro
+                            Item {
+                                anchors.centerIn: parent
+                                width: tarjeta.ancho
+                                height: tarjeta.alto
+                                opacity: Math.max(0, 1 - 3 * tarjeta.t)
+                                visible: opacity > 0
 
-                                    // Vídeo/GIF en la del centro: copia de la vista previa grande (no
-                                    // decodifica nada aparte). Recorta como PreserveAspectCrop.
-                                    ShaderEffectSource {
-                                        id: vidT
-                                        anchors.fill: parent
-                                        sourceItem: previaAnim
-                                        live: true
-                                        hideSource: false
-                                        // Textura del tamaño de la tarjeta (no de la pantalla): menos trabajo por fotograma
-                                        textureSize: Qt.size(Math.ceil(width), Math.ceil(height))
-                                        readonly property real ar: width / Math.max(1, height)
-                                        readonly property real arV: previaAnim.width / Math.max(1, previaAnim.height)
-                                        sourceRect: ar < arV
-                                            ? Qt.rect((previaAnim.width - previaAnim.height * ar) / 2, 0, previaAnim.height * ar, previaAnim.height)
-                                            : Qt.rect(0, (previaAnim.height - previaAnim.width / ar) / 2, previaAnim.width, previaAnim.width / ar)
-                                        opacity: tarjeta.centro && previaAnim.listo && previaAnim.reproduciendo === tarjeta.filePath
-                                            ? Math.max(0, 1 - 3 * tarjeta.t) : 0
-                                        visible: opacity > 0
-                                        Behavior on opacity {
-                                            NumberAnimation { duration: 250 }
-                                        }
-                                    }
-
-                                    layer.enabled: true
-                                    layer.effect: MultiEffect {
-                                        maskEnabled: true
-                                        maskSource: mascaraT
-                                        maskThresholdMin: 0.5
-                                        maskSpreadAtMin: 1.0
-                                        brightness: tarjeta.sobre && !tarjeta.centro ? -0.12 : -0.38 * tarjeta.t
-                                        saturation: -0.25 * tarjeta.t
-                                    }
-                                }
-
-                                Rectangle {
-                                    id: mascaraT
-                                    width: foto.width
-                                    height: foto.height
-                                    radius: contenidoT.radio
-                                    visible: false
-                                    layer.enabled: true
-                                }
-
-                                // Borde de color en la del centro
-                                Rectangle {
-                                    anchors.fill: parent
-                                    anchors.margins: -3
-                                    radius: contenidoT.radio + 3
-                                    color: "transparent"
-                                    border.color: c.primary
-                                    border.width: 3
-                                    opacity: tarjeta.centro ? Math.max(0, 1 - 2 * tarjeta.t) : tarjeta.sobre ? 0.5 : 0
-                                    Behavior on opacity {
-                                        NumberAnimation { duration: 200 }
-                                    }
-                                }
-
-                                // Insignias y nombre: solo en la del centro (las franjas van sin título)
-                                Item {
-                                    anchors.fill: parent
-                                    opacity: Math.max(0, 1 - 3 * tarjeta.t)
-                                    visible: opacity > 0
-
-                                    Rectangle {
-                                        visible: tarjeta.esActual
-                                        anchors.top: parent.top
-                                        anchors.right: parent.right
-                                        anchors.margins: 12
-                                        width: textoActual.width + 22
-                                        height: 26
-                                        radius: 13
-                                        color: c.primary
-                                        Text {
-                                            id: textoActual
-                                            anchors.centerIn: parent
-                                            text: "✓ Actual"
-                                            color: c.primaryText
-                                            font.pixelSize: 11
-                                            font.bold: true
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        visible: root.esAnimado(tarjeta.filePath)
-                                        anchors.top: parent.top
-                                        anchors.left: parent.left
-                                        anchors.margins: 12
-                                        width: textoTipo.width + 22
-                                        height: 26
-                                        radius: 13
-                                        color: root.conAlfa(c.surface, 0.85)
-                                        border.color: c.primary
-                                        Text {
-                                            id: textoTipo
-                                            anchors.centerIn: parent
-                                            text: /\.gif$/i.test(tarjeta.filePath) ? "▶ GIF" : "▶ Vídeo"
-                                            color: c.primary
-                                            font.pixelSize: 11
-                                            font.bold: true
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        anchors.bottom: parent.bottom
-                                        anchors.left: parent.left
-                                        anchors.margins: 12
-                                        width: Math.min(textoNombre.implicitWidth + 24, parent.width - 24)
-                                        height: 28
-                                        radius: 14
-                                        color: root.conAlfa(c.surface, 0.8)
-                                        Text {
-                                            id: textoNombre
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            x: 12
-                                            width: parent.width - 24
-                                            elide: Text.ElideRight
-                                            text: root.bonito(tarjeta.filePath.split("/").pop().replace(/\.[^.]+$/, ""))
-                                            color: c.surfaceText
-                                            font.pixelSize: 12
-                                            font.bold: true
-                                        }
-                                    }
-
-                                    // "Clic para aplicar" al pasar el cursor
-                                    Rectangle {
-                                        anchors.centerIn: parent
-                                        width: textoAplicar.width + 26
-                                        height: 30
-                                        radius: 15
-                                        color: root.conAlfa(c.surface, 0.85)
-                                        border.color: c.primary
-                                        opacity: tarjeta.sobre && tarjeta.centro && !tarjeta.esActual ? 1 : 0
-                                        scale: tarjeta.sobre ? 1 : 0.8
-                                        Behavior on opacity {
-                                            NumberAnimation { duration: 200 }
-                                        }
-                                        Behavior on scale {
-                                            NumberAnimation { duration: 250; easing.type: Easing.OutBack }
-                                        }
-                                        Text {
-                                            id: textoAplicar
-                                            anchors.centerIn: parent
-                                            text: "Clic para aplicar"
-                                            color: c.primary
-                                            font.pixelSize: 12
-                                            font.bold: true
-                                        }
-                                    }
-                                }
-
-                                // En una franja, el fondo actual se marca con un ✓ pequeño
                                 Rectangle {
                                     visible: tarjeta.esActual
-                                    opacity: Math.max(0, 3 * tarjeta.t - 2)
-                                    anchors.horizontalCenter: parent.horizontalCenter
                                     anchors.top: parent.top
-                                    anchors.topMargin: 10
-                                    width: 22
-                                    height: 22
-                                    radius: 11
+                                    anchors.right: parent.right
+                                    anchors.margins: 14
+                                    width: textoActual.width + 22
+                                    height: 26
+                                    radius: 13
                                     color: c.primary
                                     Text {
+                                        id: textoActual
                                         anchors.centerIn: parent
-                                        text: "✓"
+                                        text: "✓ Actual"
                                         color: c.primaryText
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                    }
+                                }
+
+                                Rectangle {
+                                    visible: root.esAnimado(tarjeta.filePath)
+                                    anchors.top: parent.top
+                                    anchors.left: parent.left
+                                    anchors.margins: 14
+                                    width: textoTipo.width + 22
+                                    height: 26
+                                    radius: 13
+                                    color: root.conAlfa(c.surface, 0.85)
+                                    border.color: c.primary
+                                    Text {
+                                        id: textoTipo
+                                        anchors.centerIn: parent
+                                        text: /\.gif$/i.test(tarjeta.filePath) ? "▶ GIF" : "▶ Vídeo"
+                                        color: c.primary
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                    }
+                                }
+
+                                // "Clic para aplicar" al pasar el cursor
+                                Rectangle {
+                                    anchors.centerIn: parent
+                                    width: textoAplicar.width + 26
+                                    height: 30
+                                    radius: 15
+                                    color: root.conAlfa(c.surface, 0.85)
+                                    border.color: c.primary
+                                    opacity: tarjeta.sobre && tarjeta.centro && !tarjeta.esActual ? 1 : 0
+                                    Behavior on opacity {
+                                        NumberAnimation { duration: 160 }
+                                    }
+                                    Text {
+                                        id: textoAplicar
+                                        anchors.centerIn: parent
+                                        text: "Clic para aplicar"
+                                        color: c.primary
                                         font.pixelSize: 12
                                         font.bold: true
                                     }
                                 }
                             }
 
-                            // ----- Reflejo en el "suelo" (copia en vivo de la foto, volteada) -----
-                            Item {
-                                id: reflejo
-                                anchors.top: foto.bottom
-                                anchors.topMargin: 8
-                                width: foto.width
-                                height: 70
-                                clip: true
-                                opacity: tarjeta.centro ? 0.35 : 0.2
-
-                                ShaderEffectSource {
-                                    width: foto.width
-                                    height: foto.height
-                                    sourceItem: contenidoT
-                                    live: true
-                                    hideSource: false
-                                    // Media resolución: el reflejo es tenue y borroso
-                                    textureSize: Qt.size(Math.ceil(foto.width / 2), Math.ceil(foto.height / 2))
-                                    smooth: true
-                                    transform: Scale { yScale: -1; origin.y: foto.height / 2 }
-                                }
-
-                                layer.enabled: true
-                                layer.effect: MultiEffect {
-                                    maskEnabled: true
-                                    maskSource: mascaraReflejo
-                                }
-                            }
-
+                            // En una lateral, el fondo actual se marca con un ✓ pequeño
                             Rectangle {
-                                id: mascaraReflejo
-                                width: reflejo.width
-                                height: reflejo.height
-                                visible: false
-                                layer.enabled: true
-                                gradient: Gradient {
-                                    GradientStop { position: 0.0; color: "white" }
-                                    GradientStop { position: 1.0; color: "transparent" }
+                                visible: tarjeta.esActual
+                                opacity: Math.max(0, 3 * tarjeta.t - 2)
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                y: root.margenSombra + 10
+                                width: 22
+                                height: 22
+                                radius: 11
+                                color: c.primary
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "✓"
+                                    color: c.primaryText
+                                    font.pixelSize: 12
+                                    font.bold: true
                                 }
                             }
 
+                            // Solo responde dentro del paralelogramo (las esquinas son de las vecinas)
                             MouseArea {
                                 id: zonaT
-                                x: 0
-                                y: foto.y
-                                width: foto.width
-                                height: foto.height
+                                anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
+                                containmentMask: QtObject {
+                                    function contains(point: point): bool {
+                                        var py = point.y - zonaT.height / 2
+                                        var px = point.x - zonaT.width / 2 + tarjeta.sesgo * py
+                                        return Math.abs(px) <= tarjeta.ancho / 2 && Math.abs(py) <= tarjeta.alto / 2
+                                    }
+                                }
                                 onClicked: mouse => {
                                     if (!tarjeta.centro) {
                                         root.objetivo = tarjeta.logica        // primero se elige
@@ -959,6 +720,156 @@ Scope {
                     }
                 }
 
+                // ----- Debajo: nombre, paleta y maqueta de la barra -----
+                Column {
+                    id: detalle
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.top: carrusel.bottom
+                    anchors.topMargin: 2
+                    spacing: 16
+
+                    // Nombre del fondo (cambia con un fundido)
+                    Text {
+                        id: titulo
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        property string texto: root.bonito(root.vista.split("/").pop().replace(/\.[^.]+$/, ""))
+                        width: Math.min(implicitWidth, interfaz.width - 200)
+                        horizontalAlignment: Text.AlignHCenter
+                        elide: Text.ElideRight
+                        text: texto
+                        color: c.surfaceText
+                        font.pixelSize: 34
+                        font.bold: true
+                        onTextoChanged: saltoTitulo.restart()
+                        NumberAnimation { id: saltoTitulo; target: titulo; property: "opacity"; from: 0.2; to: 1; duration: 300 }
+                    }
+
+                    Row {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        spacing: 44
+
+                        // Paleta que generaría matugen
+                        Row {
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 14
+
+                            Repeater {
+                                model: [
+                                    { n: "Primario", k: "primary" },
+                                    { n: "Secundario", k: "secondary" },
+                                    { n: "Terciario", k: "tertiary" },
+                                    { n: "Superficie", k: "surface" },
+                                    { n: "Texto", k: "surfaceText" }
+                                ]
+                                delegate: Column {
+                                    required property var modelData
+                                    spacing: 4
+                                    opacity: root.pal ? 1 : 0.35
+                                    Behavior on opacity { NumberAnimation { duration: 250 } }
+                                    Rectangle {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        width: 32
+                                        height: 32
+                                        radius: 16
+                                        color: c[modelData.k]
+                                        border.color: root.conAlfa(c.surfaceText, 0.5)
+                                        border.width: 1.5
+                                    }
+                                    Text {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        text: modelData.n
+                                        color: c.surfaceText
+                                        opacity: 0.75
+                                        font.pixelSize: 10
+                                    }
+                                }
+                            }
+                        }
+
+                        // Maqueta de la barra con los colores nuevos
+                        Column {
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 6
+
+                            Text {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: root.pal ? "Así se verá tu barra" : "Calculando colores…"
+                                color: c.surfaceText
+                                opacity: 0.75
+                                font.pixelSize: 11
+                            }
+
+                            Rectangle {
+                                width: 340
+                                height: 46
+                                radius: 23
+                                color: root.conAlfa(c.surface, 0.85)
+                                border.color: root.conAlfa(c.primary, 0.6)
+                                border.width: 1.5
+
+                                Row {
+                                    anchors.centerIn: parent
+                                    spacing: 10
+
+                                    Rectangle {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 32
+                                        height: 32
+                                        radius: 16
+                                        color: c.primary
+                                        Grid {
+                                            anchors.centerIn: parent
+                                            columns: 2
+                                            spacing: 2
+                                            Repeater {
+                                                model: 4
+                                                Rectangle { width: 5; height: 5; radius: 1.5; color: c.primaryText }
+                                            }
+                                        }
+                                    }
+
+                                    Repeater {
+                                        model: ["firefox", "Alacritty", "system-file-manager", "utilities-system-monitor", "multimedia-volume-control"]
+                                        delegate: Item {
+                                            required property string modelData
+                                            required property int index
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: 36
+                                            height: 40
+                                            Rectangle {
+                                                visible: index === 1
+                                                anchors.centerIn: parent
+                                                width: 36
+                                                height: 36
+                                                radius: 11
+                                                color: root.conAlfa(c.primary, 0.25)
+                                                border.color: c.primary
+                                            }
+                                            Image {
+                                                anchors.centerIn: parent
+                                                width: 22
+                                                height: 22
+                                                sourceSize.width: 48
+                                                sourceSize.height: 48
+                                                source: Quickshell.iconPath(modelData, "application-x-executable")
+                                            }
+                                            Rectangle {
+                                                visible: index < 2
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                anchors.bottom: parent.bottom
+                                                width: index === 1 ? 14 : 4
+                                                height: 3
+                                                radius: 1.5
+                                                color: index === 1 ? c.primary : c.surfaceText
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // ----- Ayudas de teclado -----
                 Row {
                     id: ayudas
@@ -966,10 +877,6 @@ Scope {
                     anchors.bottomMargin: 34
                     anchors.horizontalCenter: parent.horizontalCenter
                     spacing: 10
-                    opacity: root.abierto ? 0.9 : 0
-                    Behavior on opacity {
-                        NumberAnimation { duration: 700 }
-                    }
 
                     Repeater {
                         model: [
@@ -1044,13 +951,13 @@ Scope {
             Row {
                 id: filaTransicion
                 anchors.left: parent.left
-                anchors.leftMargin: 70
+                anchors.leftMargin: 40
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 34
                 spacing: 6
                 opacity: root.abierto && !root.aplicando ? 0.95 : 0
                 Behavior on opacity {
-                    NumberAnimation { duration: 500 }
+                    NumberAnimation { duration: 200 }
                 }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
@@ -1083,13 +990,13 @@ Scope {
             Row {
                 id: filaDuracion
                 anchors.right: parent.right
-                anchors.rightMargin: 70
+                anchors.rightMargin: 40
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 34
                 spacing: 6
                 opacity: root.abierto && !root.aplicando ? 0.95 : 0
                 Behavior on opacity {
-                    NumberAnimation { duration: 500 }
+                    NumberAnimation { duration: 200 }
                 }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter

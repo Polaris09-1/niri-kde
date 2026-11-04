@@ -9,6 +9,33 @@ Scope {
     property bool abierto: false
     property string filtro: ""
 
+    // Arrastrar una app al escritorio: mantener pulsada y mover. No usa el arrastre de Wayland (el
+    // escritorio está debajo de las ventanas y la app podría caer dentro de otra): el cajón sigue el
+    // cursor, deja ver el escritorio y al soltar avisa al módulo "escritorio" por IPC.
+    property var arrastrada: null
+    property real cursorX: 0
+    property real cursorY: 0
+    function ipcEscritorio(args) {
+        Quickshell.execDetached(["qs", "-c", "escritorio", "ipc", "call", "escritorio"].concat(args))
+    }
+    function empezarArrastre(app, x, y) {
+        root.arrastrada = app
+        root.cursorX = x
+        root.cursorY = y
+        root.ipcEscritorio(["arrastreApp", "empezar"])
+    }
+    function soltarArrastre() {
+        var app = root.arrastrada
+        root.arrastrada = null
+        root.ipcEscritorio(["soltarApp", app.id, String(Math.round(root.cursorX)), String(Math.round(root.cursorY))])
+        root.cerrar()
+    }
+    function cancelarArrastre() {
+        root.arrastrada = null
+        root.ipcEscritorio(["arrastreApp", "cancelar"])
+        root.cerrar()
+    }
+
     // Apps que no quieres ver (por inicio del nombre)
     property var ocultas: ["Avahi", "Foot Client", "Foot Server", "Hardware Locality", "Qt V4L2", "xgps"]
 
@@ -42,6 +69,7 @@ Scope {
     }
 
     function cerrar() {
+        root.arrastrada = null
         root.abierto = false
         esconder.restart()
     }
@@ -77,26 +105,43 @@ Scope {
         WlrLayershell.layer: WlrLayer.Overlay
         WlrLayershell.namespace: "cajon"
         WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+        // Toda la pantalla, salvo durante un arrastre: ahí hay que ver el escritorio nítido
+        BackgroundEffect.blurRegion: root.arrastrada === null ? zonaBlur : null
+        property Region zonaBlur: Region { x: 0; y: 0; width: ventana.width; height: ventana.height }
 
         // Fondo oscuro; clic afuera cierra
         Rectangle {
             anchors.fill: parent
             color: tema.surface
-            opacity: root.abierto ? 0.55 : 0
+            opacity: root.abierto && root.arrastrada === null ? 0.55 : 0
             Behavior on opacity {
                 NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
             }
             MouseArea {
                 anchors.fill: parent
                 onClicked: root.cerrar()
+                enabled: root.arrastrada === null
             }
+        }
+
+        // La app que se arrastra, siguiendo al cursor
+        Image {
+            z: 10
+            visible: root.arrastrada !== null
+            x: root.cursorX - width / 2
+            y: root.cursorY - height / 2
+            width: 64
+            height: 64
+            sourceSize.width: 128
+            sourceSize.height: 128
+            source: root.arrastrada ? Quickshell.iconPath(root.arrastrada.icon, "application-x-executable") : ""
         }
 
         // Contenido con zoom de entrada
         Item {
             id: contenido
             anchors.fill: parent
-            opacity: root.abierto ? 1 : 0
+            opacity: root.abierto && root.arrastrada === null ? 1 : 0
             scale: root.abierto ? 1 : 0.9
             Behavior on opacity {
                 NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
@@ -127,7 +172,7 @@ Scope {
                     color: tema.surfaceText
                     font.pixelSize: 18
                     onTextChanged: root.filtro = text
-                    Keys.onEscapePressed: root.cerrar()
+                    Keys.onEscapePressed: root.arrastrada !== null ? root.cancelarArrastre() : root.cerrar()
                     Keys.onReturnPressed: if (root.visibles.length > 0) root.lanzar(root.visibles[0])
                     Keys.onEnterPressed: if (root.visibles.length > 0) root.lanzar(root.visibles[0])
 
@@ -154,6 +199,7 @@ Scope {
                 cellWidth: 140
                 cellHeight: 140
                 clip: true
+                interactive: root.arrastrada === null
                 model: root.visibles
 
                 delegate: Item {
@@ -219,7 +265,25 @@ Scope {
                         anchors.fill: parent
                         hoverEnabled: true
                         acceptedButtons: Qt.LeftButton | Qt.RightButton
-                        onClicked: mouse => mouse.button === Qt.RightButton ? root.alEscritorio(celda.modelData) : root.lanzar(celda.modelData)
+                        pressAndHoldInterval: 300
+                        preventStealing: root.arrastrada !== null
+                        onClicked: mouse => {
+                            if (root.arrastrada !== null) return
+                            mouse.button === Qt.RightButton ? root.alEscritorio(celda.modelData) : root.lanzar(celda.modelData)
+                        }
+                        onPressAndHold: mouse => {
+                            if (mouse.button !== Qt.LeftButton) return
+                            var p = zona.mapToItem(null, mouse.x, mouse.y)
+                            root.empezarArrastre(celda.modelData, p.x, p.y)
+                        }
+                        onPositionChanged: mouse => {
+                            if (root.arrastrada === null) return
+                            var p = zona.mapToItem(null, mouse.x, mouse.y)
+                            root.cursorX = p.x
+                            root.cursorY = p.y
+                        }
+                        onReleased: if (root.arrastrada !== null) root.soltarArrastre()
+                        onCanceled: if (root.arrastrada !== null) root.cancelarArrastre()
                     }
                 }
             }

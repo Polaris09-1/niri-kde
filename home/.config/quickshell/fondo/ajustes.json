@@ -4,5 +4,5 @@
     "optimizarVideo": true,
     "pausarConBateria": false,
     "pausarTapado": true,
-    "transicion": "barrido"
+    "transicion": "ola"
 }

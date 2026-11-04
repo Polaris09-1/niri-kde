@@ -223,6 +223,32 @@ Scope {
     // ===== Energía: luz nocturna (wlsunset), límite de carga (UPower) y modos (power-profiles-daemon) =====
     LuzNocturna { id: luz }
     LimiteCarga { id: limite }
+
+    // Mantener despierto: el estado lo lleva el módulo "bloqueo" y lo publica en este archivo
+    property bool cafeina: false
+    property var mediosActivos: []
+    FileView {
+        id: archivoDespierto
+        path: Quickshell.env("XDG_RUNTIME_DIR") + "/bloqueo-despierto.json"
+        watchChanges: true
+        onFileChanged: reload()
+        onLoaded: {
+            try {
+                var d = JSON.parse(text())
+                root.cafeina = d.cafeina === true
+                root.mediosActivos = d.medios || []
+            } catch (e) {}
+        }
+        onLoadFailed: reintentarDespierto.restart()     // "bloqueo" aún no ha arrancado
+    }
+    Timer {
+        id: reintentarDespierto
+        interval: 3000
+        onTriggered: archivoDespierto.reload()
+    }
+    function alternarCafeina() {
+        Quickshell.execDetached(["qs", "-c", "bloqueo", "ipc", "call", "bloqueo", "cafeina", "alternar"])
+    }
     function textoPerfil() {
         return PowerProfiles.profile === PowerProfile.PowerSaver ? "ahorro"
             : PowerProfiles.profile === PowerProfile.Performance ? "rendimiento" : "equilibrado"
@@ -1031,6 +1057,34 @@ Scope {
                             }
                         }
 
+                        // Cafeína encendida: taza; clic la apaga
+                        Rectangle {
+                            id: indicadorCafeina
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: root.cafeina
+                            width: 30
+                            height: 30
+                            radius: 15
+                            color: root.alfa(tema.primary, maCafeinaBarra.containsMouse ? 0.35 : 0.2)
+                            Behavior on color {
+                                ColorAnimation { duration: 150 }
+                            }
+                            Text {
+                                anchors.centerIn: parent
+                                text: root.ic(0xF0176)
+                                font.family: root.fuente
+                                font.pixelSize: 15
+                                color: tema.primary
+                            }
+                            MouseArea {
+                                id: maCafeinaBarra
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.alternarCafeina()
+                            }
+                        }
+
                         // Píldora de estado: clic abre el panel, rueda cambia el volumen
                         Rectangle {
                             id: pildora
@@ -1449,6 +1503,75 @@ Scope {
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    // Mantener despierto (cafeína): toda la tarjeta es el interruptor
+                    Rectangle {
+                        id: tarjetaCafeina
+                        width: parent.width
+                        height: 56
+                        radius: 16
+                        color: root.cafeina ? root.alfa(tema.primary, maCafeina.containsMouse ? 0.3 : 0.2)
+                            : root.alfa(tema.primary, maCafeina.containsMouse ? 0.16 : 0.07)
+                        Behavior on color {
+                            ColorAnimation { duration: 150 }
+                        }
+                        Rectangle {
+                            id: circuloCafeina
+                            x: 10
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 34
+                            height: 34
+                            radius: 17
+                            color: root.cafeina ? tema.primary : root.alfa(tema.primary, maCafeina.containsMouse ? 0.25 : 0.12)
+                            scale: maCafeina.pressed ? 0.9 : 1
+                            Behavior on color {
+                                ColorAnimation { duration: 150 }
+                            }
+                            Behavior on scale {
+                                NumberAnimation { duration: 120; easing.type: Easing.OutBack }
+                            }
+                            Text {
+                                anchors.centerIn: parent
+                                text: root.ic(0xF0176)
+                                font.family: root.fuente
+                                font.pixelSize: 17
+                                color: root.cafeina ? tema.primaryText : tema.primary
+                            }
+                        }
+                        Column {
+                            anchors.left: circuloCafeina.right
+                            anchors.leftMargin: 9
+                            anchors.right: parent.right
+                            anchors.rightMargin: 8
+                            anchors.verticalCenter: parent.verticalCenter
+                            Text {
+                                width: parent.width
+                                elide: Text.ElideRight
+                                text: "Mantener despierto"
+                                font.family: root.fuente
+                                font.pixelSize: 12
+                                font.bold: true
+                                color: tema.surfaceText
+                            }
+                            Text {
+                                width: parent.width
+                                elide: Text.ElideRight
+                                text: root.cafeina ? "No se bloquea ni se suspende solo"
+                                    : root.mediosActivos.length ? "Reproduciendo: " + root.mediosActivos.join(", ")
+                                    : "Se bloquea tras 10 min sin uso"
+                                font.family: root.fuente
+                                font.pixelSize: 10
+                                color: root.alfa(tema.surfaceText, 0.65)
+                            }
+                        }
+                        MouseArea {
+                            id: maCafeina
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.alternarCafeina()
                         }
                     }
 

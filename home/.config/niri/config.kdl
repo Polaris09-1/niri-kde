@@ -350,6 +350,7 @@ window-rule {
 binds {
     Mod+A { spawn "qs" "-c" "cajon" "ipc" "call" "cajon" "toggle"; }
     Mod+Shift+W hotkey-overlay-title="Galería de fondos" { spawn "qs" "-c" "galeria" "ipc" "call" "galeria" "toggle"; }
+    Mod+Shift+D hotkey-overlay-title="Personalizar escritorio" { spawn "qs" "-c" "escritorio" "ipc" "call" "escritorio" "personalizar"; }
     Mod+V hotkey-overlay-title="Historial del portapapeles" { spawn "qs" "-c" "portapapeles" "ipc" "call" "portapapeles" "toggle"; }
     Mod+Shift+S hotkey-overlay-title="Panel de capturas" { spawn "qs" "-c" "hola" "ipc" "call" "hola" "pagina" "capturas"; }
     // Keys consist of modifiers separated by + signs, followed by an XKB key name
@@ -688,13 +689,12 @@ window-rule {
 
 layer-rule {
     match namespace="^cajon$"
+    // El desenfoque lo pide el propio cajón (BackgroundEffect): lo apaga mientras se arrastra una app
     background-effect {
-        blur true
         xray false
     }
 }
 
-spawn-at-startup "quickshell" "-c" "reloj"
 spawn-at-startup "quickshell" "-c" "escritorio"
 // OSD de volumen, micro, brillo y Bloq Mayús (2026-11-01)
 spawn-at-startup "quickshell" "-c" "osd"

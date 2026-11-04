@@ -45,6 +45,18 @@ if command -v nmcli >/dev/null; then
 fi
 # Ubicación de la luz nocturna (debe quedar en 0,0 en el repo)
 buscar "Coordenadas de la luz nocturna" 'property real (lat|lon): -?([1-9][0-9]*\.[0-9]*|0\.[0-9]*[1-9])' grave
+# Diseño del escritorio: sin nombres de archivos ni nombre del saludo
+disenos="home/.config/quickshell/escritorio/disenos.json"
+if [ -f "$disenos" ] && ! jq -e '[.. | objects | select(has("elementos")) | .elementos[] | select(.tipo == "icono" or .tipo == "grupo" or .opciones.nombre != null)] | length == 0' "$disenos" >/dev/null 2>&1; then
+    echo "-- $disenos contiene iconos, grupos o el nombre del saludo (o no se puede leer)"
+    grave=1
+fi
+for privado in clima-ciudad.json recordatorios.json; do
+    if find . -path ./.git -prune -o -name "$privado" -print | grep -q .; then
+        echo "-- $privado está en el repositorio (ciudad o recordatorios personales)"
+        grave=1
+    fi
+done
 # Nombre del equipo
 buscarLiteral "Nombre del equipo" "$(cat /etc/hostname 2>/dev/null)"
 

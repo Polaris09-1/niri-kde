@@ -45,8 +45,23 @@ done
 
 # Datos personales → marcadores
 grep -rlI --null -F "$HOME" "$DEST" | xargs -0 -r sed -i "s#$HOME#@HOME@#g"
-reloj="$DEST/.config/quickshell/reloj/shell.qml"
+reloj="$DEST/.config/quickshell/escritorio/WidgetReloj.qml"
 [ -f "$reloj" ] && sed -i -E 's/(property string nombre: )"[^"]*"/\1"@NOMBRE@"/' "$reloj"
+
+# Escritorio: sin los nombres de tus archivos, tus grupos ni el nombre del saludo (al instalar, los iconos van a los
+# primeros huecos y el saludo usa el nombre de la cuenta). Si no se puede limpiar, el archivo no se sube.
+disenos="$DEST/.config/quickshell/escritorio/disenos.json"
+rm -f "$disenos.corrupto"
+# La ciudad del clima y los recordatorios son tuyos: nunca suben
+rm -f "$DEST/.config/quickshell/escritorio/clima-ciudad.json" "$DEST/.config/quickshell/escritorio/recordatorios.json"
+if [ -f "$disenos" ]; then
+    if jq '(.. | objects | select(has("elementos")) | .elementos) |= map(select(.tipo != "icono" and .tipo != "grupo") | del(.opciones.nombre))' \
+        "$disenos" > "$disenos.limpio"; then
+        mv -f "$disenos.limpio" "$disenos"
+    else
+        rm -f "$disenos" "$disenos.limpio"
+    fi
+fi
 
 # Luz nocturna: no subir la ubicación (lat/lon). En el repo queda 0,0; quien instale pone la suya
 # en LuzNocturna.qml o en hola/luz-nocturna.json (se crea solo al arrancar)

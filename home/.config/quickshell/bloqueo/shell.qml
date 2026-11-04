@@ -284,16 +284,16 @@ ShellRoot {
     // ===== Inactividad =====
     IdleMonitor {
         id: inactivoAtenuar
-        enabled: !root.bloqueado
+        enabled: !root.bloqueado && !root.reiniciandoMonitores
         timeout: root.atenuarSeg
         respectInhibitors: true
     }
     IdleMonitor {
         id: inactivoBloquear
-        enabled: !root.bloqueado
+        enabled: !root.bloqueado && !root.reiniciandoMonitores
         timeout: root.bloquearSeg
         respectInhibitors: true
-        onIsIdleChanged: if (isIdle) root.bloquear()
+        onIsIdleChanged: if (isIdle) root.alInactivo("bloquear")
     }
     IdleMonitor {
         id: inactivoPantalla
@@ -304,16 +304,153 @@ ShellRoot {
     }
     IdleMonitor {
         id: inactivoSuspender
-        enabled: UPower.onBattery
+        enabled: UPower.onBattery && !root.reiniciandoMonitores
         timeout: root.suspenderSeg
         respectInhibitors: true
-        onIsIdleChanged: if (isIdle) root.energia("suspender")
+        onIsIdleChanged: if (isIdle) root.alInactivo("suspender")
+    }
+
+    // ===== Mantener despierto (2026-11-03) =====
+    // Los IdleMonitor de arriba ya respetan a quien pide inhibir (navegadores, mpv...). Esto es el
+    // respaldo por si alguien no lo pide: reproductor MPRIS en Playing o audio saliendo por PipeWire;
+    // y la cafeína manual. Al soltar el inhibidor, niri vuelve a contar el tiempo completo desde cero.
+    // Bloquear a mano y cerrar la tapa siguen funcionando igual.
+    property bool cafeina: false
+    property var audioActivo: []        // nombres de apps con audio en estado "running"
+    readonly property var jugadoresActivos: Mpris.players.values.filter(j => j.isPlaying).map(j => j.identity)
+    readonly property var medios: root.jugadoresActivos.concat(root.audioActivo)
+        .filter((v, i, l) => l.indexOf(v) === i)
+    readonly property bool despierto: root.cafeina || root.medios.length > 0
+
+    // Sondeo de PipeWire: pw-dump tarda ~35 ms
+    Timer {
+        interval: 5000
+        repeat: true
+        running: true
+        triggeredOnStart: true
+        onTriggered: if (!pAudio.running) pAudio.running = true
+    }
+    Process {
+        id: pAudio
+        command: ["pw-dump"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var nombres = []
+                try {
+                    JSON.parse(text).forEach(o => {
+                        var info = o.info || {}
+                        var p = info.props || {}
+                        if (p["media.class"] === "Stream/Output/Audio" && info.state === "running")
+                            nombres.push(p["application.name"] || p["application.process.binary"] || "audio")
+                    })
+                } catch (e) { return }
+                if (JSON.stringify(nombres) !== JSON.stringify(root.audioActivo)) root.audioActivo = nombres
+            }
+        }
+    }
+
+    // Una capa transparente de 1 px basta para sostener el inhibidor: está en Overlay para que
+    // ninguna ventana la tape. No recibe el mouse.
+    PanelWindow {
+        id: capaDespierto
+        anchors.bottom: true
+        anchors.left: true
+        implicitWidth: 1
+        implicitHeight: 1
+        color: "transparent"
+        exclusionMode: ExclusionMode.Ignore
+        exclusiveZone: 0
+        mask: Region {}
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.namespace: "bloqueo-despierto"
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+    }
+    IdleInhibitor {
+        window: capaDespierto
+        enabled: root.despierto
+    }
+
+    // Estado para la barra (hola): cafeína y qué se está reproduciendo. En $XDG_RUNTIME_DIR: la
+    // cafeína dura hasta reiniciar el equipo, aunque se reinicie este módulo.
+    FileView {
+        id: archivoDespierto
+        path: Quickshell.env("XDG_RUNTIME_DIR") + "/bloqueo-despierto.json"
+        property bool leido: false
+        onLoaded: {
+            try { root.cafeina = JSON.parse(text()).cafeina === true } catch (e) {}
+            archivoDespierto.leido = true
+            root.publicarDespierto()
+        }
+        onLoadFailed: { archivoDespierto.leido = true; root.publicarDespierto() }
+    }
+    function publicarDespierto() {
+        if (!archivoDespierto.leido) return
+        archivoDespierto.setText(JSON.stringify({ cafeina: root.cafeina, medios: root.medios }) + "\n")
+    }
+    onCafeinaChanged: {
+        root.publicarDespierto()
+        root.anotar("cafeína " + (root.cafeina ? "encendida" : "apagada"))
+    }
+    readonly property string mediosTexto: root.medios.join(", ")     // solo cambia si cambia de verdad
+    onMediosTextoChanged: {
+        root.publicarDespierto()
+        root.anotar(root.medios.length ? "reproduciendo: " + root.medios.join(", ") : "sin reproducción")
+    }
+
+    // Registro para saber por qué pasó algo: solo nombres de apps, nunca títulos. Últimas 500 líneas.
+    function anotar(texto) {
+        var linea = new Date().toISOString() + " " + texto
+        Quickshell.execDetached(["sh", "-c",
+            'mkdir -p "$(dirname "$2")"; printf "%s\\n" "$1" >> "$2"; tail -n 500 "$2" > "$2.tmp" && mv -f "$2.tmp" "$2"',
+            "sh", linea, Quickshell.env("HOME") + "/.cache/bloqueo/registro.log"])
+    }
+
+    // Lo que hace la inactividad al cumplirse el tiempo. Con "simular" solo lo anota.
+    function alInactivo(que) {
+        var estado = " | cafeína=" + root.cafeina + " mpris=[" + root.jugadoresActivos.join(",")
+            + "] audio=[" + root.audioActivo.join(",") + "]"
+        root.anotar((root.simular ? "(simulado) " : "") + "inactividad: " + que + estado)
+        if (root.simular) return
+        if (que === "bloquear") root.bloquear()
+        else if (que === "suspender") root.energia("suspender")
+    }
+
+    // Tiempos temporales para probar. Se restauran solos a los 15 min o con 0; reiniciar el módulo también.
+    // Ojo: IdleMonitor ignora un timeout nuevo si no se desactiva y reactiva (Quickshell 0.3.2).
+    property bool simular: false
+    property bool reiniciandoMonitores: false
+    Timer {
+        id: reactivarMonitores
+        interval: 50
+        onTriggered: root.reiniciandoMonitores = false
+    }
+    Timer {
+        id: finTiempos
+        interval: 900000
+        onTriggered: root.ponerTiempos(0, false)
+    }
+    function ponerTiempos(seg, simulado) {
+        root.reiniciandoMonitores = true
+        reactivarMonitores.restart()
+        root.simular = seg > 0 && simulado
+        if (seg > 0) {
+            root.atenuarSeg = Math.max(1, Math.round(seg * 0.8))
+            root.bloquearSeg = seg
+            if (simulado) root.suspenderSeg = seg
+            finTiempos.restart()
+        } else {
+            root.atenuarSeg = 570
+            root.bloquearSeg = 600
+            root.suspenderSeg = 1800
+            finTiempos.stop()
+        }
+        root.anotar("tiempos: bloquear=" + root.bloquearSeg + " s" + (root.simular ? " (simulado)" : ""))
     }
 
     // Atenuado antes de bloquear: se oscurece poco a poco durante 30 s; cualquier tecla o
     // movimiento del mouse lo quita al instante. No atrapa el mouse.
     property bool probandoAtenuado: false
-    readonly property bool atenuar: (inactivoAtenuar.isIdle && !root.bloqueado) || root.probandoAtenuado
+    readonly property bool atenuar: (inactivoAtenuar.isIdle && !root.bloqueado && !root.simular) || root.probandoAtenuado
     Timer { id: finPrueba; interval: 2500; onTriggered: root.probandoAtenuado = false }
     Variants {
         model: Quickshell.screens
@@ -422,6 +559,18 @@ ShellRoot {
             return "vista previa " + segundos + " s"
         }
         function probarAtenuado(): string { root.probandoAtenuado = true; finPrueba.restart(); return "atenuando 2,5 s" }
+        // Mantener despierto: si | no | alternar | info
+        function cafeina(v: string): string {
+            if (v === "si" || v === "no") root.cafeina = v === "si"
+            else if (v === "alternar") root.cafeina = !root.cafeina
+            return root.cafeina ? "si" : "no"
+        }
+        // Tiempo de bloqueo temporal en segundos (0 = volver a 10 min; se restaura solo a los 15 min).
+        // modo "real" bloquea de verdad; "simular" solo lo anota en ~/.cache/bloqueo/registro.log
+        function probarTiempos(segundos: int, modo: string): string {
+            root.ponerTiempos(segundos, modo !== "real")
+            return "bloquear=" + root.bloquearSeg + " s, simular=" + root.simular
+        }
         function probarPam(directorio: string): string {
             if (!directorio || directorio === "/etc/pam.d") return "usa un directorio de prueba propio"
             root.resultadoPrueba = "en curso"
@@ -437,6 +586,10 @@ ShellRoot {
                 vista: root.vista, atenuar: root.atenuar,
                 inactivo: { atenuar: inactivoAtenuar.isIdle, bloquear: inactivoBloquear.isIdle,
                             suspender: inactivoSuspender.isIdle },
+                despierto: { activo: root.despierto, cafeina: root.cafeina, mpris: root.jugadoresActivos,
+                             audio: root.audioActivo },
+                tiempos: { atenuar: root.atenuarSeg, bloquear: root.bloquearSeg, suspender: root.suspenderSeg,
+                           simular: root.simular },
                 pruebaPam: root.resultadoPrueba
             })
         }

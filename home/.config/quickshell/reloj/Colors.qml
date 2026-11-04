@@ -1,1 +1,0 @@
-../hola/Colors.qml

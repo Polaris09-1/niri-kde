@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "global": {
+    "elementos": [
+      {
+        "clave": "reloj",
+        "tipo": "reloj",
+        "col": 42,
+        "fila": 19,
+        "tam": "L",
+        "opciones": {
+          "h12": false,
+          "tarjeta": false
+        }
+      },
+      {
+        "clave": "clima",
+        "tipo": "clima",
+        "col": 47,
+        "fila": 12,
+        "tam": "M",
+        "opciones": {}
+      },
+      {
+        "clave": "musica",
+        "tipo": "musica",
+        "col": 48,
+        "fila": 8,
+        "tam": "S",
+        "opciones": {}
+      },
+      {
+        "clave": "calendario",
+        "tipo": "calendario",
+        "col": 51,
+        "fila": 1,
+        "tam": "S",
+        "opciones": {
+          "domingo": true
+        }
+      },
+      {
+        "clave": "recordatorios",
+        "tipo": "recordatorios",
+        "col": 0,
+        "fila": 14,
+        "tam": "M",
+        "opciones": {}
+      }
+    ]
+  },
+  "fondos": {}
+}

@@ -32,13 +32,12 @@ arranca niri:
 | `dock` | Dock flotante abajo, se oculta solo, efecto ola, puntito de apps abiertas, menú de clic derecho. |
 | `cajon` | Cajón de aplicaciones con buscador. |
 | `portapapeles` | Historial del portapapeles (texto e imágenes) estilo Win+V, que pega en la ventana anterior. |
-| `escritorio` | Iconos de `~/Desktop` con menú de clic derecho. |
+| `escritorio` | Iconos de `~/Desktop` y widgets (reloj, calendario, clima, recordatorios, música) sobre una cuadrícula; modo "Personalizar escritorio" (`Mod+Shift+D`) para moverlos, cambiar su tamaño, ajustar sus opciones, agrupar iconos y añadir apps. |
 | `galeria` | Galería de fondos (imágenes, vídeos y GIF): carrusel infinito con la tarjeta elegida grande y las demás como franjas verticales; el vídeo o GIF elegido se reproduce en la tarjeta y a pantalla completa antes de aplicarlo (decodificado en la GPU), con vista previa de la paleta. |
 | `fondo` | Fondo de pantalla con transiciones por shader (círculo desde el clic, ola, barrido, fundido) y vídeo, que se pausa con ventanas maximizadas. |
 | `osd` | Aviso discreto de volumen, micrófono, brillo y Bloq Mayús. |
 | `bloqueo` | Pantalla de bloqueo (PAM) con música, avisos sin ver, batería y botones de energía; bloqueo automático por inactividad. |
 | `permisos` | Agente polkit: diálogo propio (en español) cuando una app pide la contraseña de administrador. |
-| `reloj` | Reloj decorativo del escritorio. |
 
 Además:
 

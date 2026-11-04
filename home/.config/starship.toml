@@ -14,13 +14,13 @@ format = """\
 $character"""
 
 [palettes.matugen]
-primary = "#ffb4a8"
-on_primary = "#690000"
-superficie = "#44302c"
-on_surface = "#fddbd6"
-secondary_container = "#891d13"
-on_secondary_container = "#ffd7d1"
-tertiary_container = "#004bf3"
+primary = "#8acff2"
+on_primary = "#003547"
+superficie = "#323537"
+on_surface = "#e0e3e5"
+secondary_container = "#344c59"
+on_secondary_container = "#cee8f7"
+tertiary_container = "#925b21"
 on_tertiary_container = "#ffffff"
 error = "#ffb4ab"
 

@@ -127,6 +127,55 @@ Scope {
     function yDe(f) { return root.margen + f * root.paso }
     function colDe(x) { return Math.round((x - root.margen) / root.paso) }
     function filaDe(y) { return Math.round((y - root.margen) / root.paso) }
+    // Dónde se ve cada elemento en ESTA pantalla, sin tocar lo guardado: en una pantalla más pequeña que aquella donde
+    // se diseñó, lo que no cabe o choca va al hueco libre más cercano; lo que no tiene hueco se oculta (lo avisa la edición).
+    // Con otra pantalla mayor todo vuelve a su sitio. Solo se recalcula si cambia el modelo o la cuadrícula.
+    property var vista: ({})                // clave -> { col, fila, oculto }
+    property var vistaLista: []             // [{ k, r: [c, f, c + w, f + h] }]: lo que ocupa sitio, para ocupados()
+    property int vistaOcultos: 0
+    property bool vistaSucia: true
+    function marcarVista() { root.vistaSucia = true; Qt.callLater(root.asegurarVista) }
+    onColumnasChanged: marcarVista()
+    onFilasChanged: marcarVista()
+    Connections {
+        target: modelo
+        function onCountChanged() { root.marcarVista() }
+        function onDataChanged() { root.marcarVista() }
+    }
+    function asegurarVista() {
+        if (!root.vistaSucia || ventana.width <= 0) return
+        root.vistaSucia = false
+        var directos = [], otros = []
+        var puestos = [], v = {}, lista = [], ocultos = 0
+        var poner = (e, c, f) => {
+            v[e.k] = { col: c, fila: f, oculto: false }
+            puestos.push(c, f, c + e.w, f + e.h)
+            lista.push({ k: e.k, r: [c, f, c + e.w, f + e.h] })
+        }
+        for (var i = 0; i < modelo.count; i++) {
+            var m = modelo.get(i)
+            var t = root.tamCeldas(m.tipo, m.tam)
+            var e = { k: m.clave, c: m.col, f: m.fila, w: t[0], h: t[1], widget: m.tipo !== "icono" && m.tipo !== "grupo" }
+            if (root.libreEn(puestos, e.c, e.f, e.w, e.h)) poner(e, e.c, e.f)
+            else otros.push(e)
+        }
+        // Primero los widgets y los más grandes: son los que más cuesta colocar
+        otros.sort((a, b) => (b.widget - a.widget) || (b.w * b.h - a.w * a.h))
+        for (var o of otros) {
+            var mejor = null, dist = Infinity
+            for (var y = 0; y <= root.filas - o.h; y++) {
+                for (var x = 0; x <= root.columnas - o.w; x++) {
+                    var q = (x - o.c) * (x - o.c) + (y - o.f) * (y - o.f)
+                    if (q < dist && root.libreEn(puestos, x, y, o.w, o.h)) { dist = q; mejor = { x: x, y: y } }
+                }
+            }
+            if (mejor) poner(o, mejor.x, mejor.y)
+            else { v[o.k] = { col: 0, fila: 0, oculto: true }; ocultos++ }
+        }
+        root.vistaLista = lista
+        root.vistaOcultos = ocultos
+        if (JSON.stringify(v) !== JSON.stringify(root.vista)) root.vista = v
+    }
     function colEnVista(c, w) { return Math.max(0, Math.min(c, root.columnas - w)) }
     function filaEnVista(f, h) { return Math.max(0, Math.min(f, root.filas - h)) }
     function tamCeldas(tipo, tam) {
@@ -487,13 +536,11 @@ Scope {
     // Se lee el modelo una vez y luego se compara con números: con muchos iconos esto corre en cada
     // movimiento del cursor y consultar el modelo miles de veces se notaría.
     function ocupados(clave) {
+        root.asegurarVista()
         var r = []
-        for (var i = 0; i < modelo.count; i++) {
-            var m = modelo.get(i)
-            if (m.clave === clave) continue
-            var t = root.tamCeldas(m.tipo, m.tam)
-            var oc = root.colEnVista(m.col, t[0]), of = root.filaEnVista(m.fila, t[1])
-            r.push(oc, of, oc + t[0], of + t[1])
+        var l = root.vistaLista
+        for (var i = 0; i < l.length; i++) {
+            if (l[i].k !== clave) r.push(l[i].r[0], l[i].r[1], l[i].r[2], l[i].r[3])
         }
         return r
     }
@@ -1367,7 +1414,7 @@ Scope {
                             width: Math.min(implicitWidth, 560)
                             elide: Text.ElideRight
                             text: root.aviso !== "" ? root.aviso
-                                : root.sinHueco.length > 0 ? root.sinHueco.length + " sin hueco: libera espacio para verlos"
+                                : root.sinHueco.length + root.vistaOcultos > 0 ? (root.sinHueco.length + root.vistaOcultos) + " sin hueco: libera espacio para verlos"
                                 : "Arrastra para mover · S M L y ⚙ al pasar el cursor"
                             font.family: root.fuente
                             font.pixelSize: 10
@@ -2182,7 +2229,7 @@ Scope {
                                     cobertura: root.cobertura, pausado: root.pausado, volverA: root.volverA,
                                     wsEdicion: root.wsEdicion, cambios: root.editando ? root.hayCambios() : false,
                                     aviso: root.aviso, fondo: root.fondoActual, cargadoPara: root.cargadoPara, propio: root.tienePropio, cambiando: root.cambiando, dialogo: root.dialogo, propios: Object.keys(root.datos.fondos || {}), catalogo: root.catalogoAbierto, grupoAbierto: root.grupoAbierto, sitioGrupo: cargaGrupo.sitio, objetivo: root.objetivoGrupo, objetivoListo: root.objetivoListo, ocultos: root.ocultos, quitados: root.quitados, creados: root.creados, escribiendo: root.escribiendo, blur: root.usarBlur, regiones: root.regionesBlur.length, panel: root.panelClave, barra: root.claveBarra, sitioBarra: barraElemento.sitio, sitioPanel: cargaPanel.sitio,
-                                    sinHueco: root.sinHueco, elementos: root.instantanea() })
+                                    sinHueco: root.sinHueco, vista: root.vista, vistaOcultos: root.vistaOcultos, elementos: root.instantanea() })
         }
         // Para probar sin mouse
         function mover(clave: string, col: int, fila: int): string {

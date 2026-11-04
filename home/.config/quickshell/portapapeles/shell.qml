@@ -39,10 +39,17 @@ Scope {
     function alfa(c, a) { return Qt.rgba(c.r, c.g, c.b, a) }
     function ic(cp) { return String.fromCodePoint(cp) }
 
+    property string salida: ""        // monitor donde se abrió (el enfocado)
+    Connections {
+        target: Quickshell
+        function onScreensChanged() { if (root.abierto) root.cerrar() }
+    }
+    function abrirEnfocada() { Principal.pedirEnfocada(n => { root.salida = n; root.abrir() }) }
+
     IpcHandler {
         target: "portapapeles"
-        function toggle(): void { root.abierto ? root.cerrar() : root.abrir() }
-        function abrir(): void { root.abrir() }
+        function toggle(): void { root.abierto ? root.cerrar() : root.abrirEnfocada() }
+        function abrir(): void { root.abrirEnfocada() }
         function cerrar(): void { root.cerrar() }
         function info(): string {
             return JSON.stringify({ abierto: root.abierto, total: root.items.length, filtrados: root.filtrados.length,
@@ -230,7 +237,7 @@ Scope {
 
     // ===== Ventana =====
     PanelWindow {
-        screen: Principal.pantalla
+        screen: Principal.porNombre(root.salida) || Principal.pantalla
         visible: Principal.lista && (root.visibleVentana)
         anchors { top: true; bottom: true; left: true; right: true }
         exclusionMode: ExclusionMode.Ignore

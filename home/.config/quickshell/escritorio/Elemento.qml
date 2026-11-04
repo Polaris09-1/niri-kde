@@ -19,8 +19,10 @@ Item {
     required property var tema
 
     readonly property var celdas: raiz.tamCeldas(tipo, tam)
-    readonly property int colVista: raiz.colEnVista(col, celdas[0])
-    readonly property int filaVista: raiz.filaEnVista(fila, celdas[1])
+    readonly property var sitio: raiz.vista[clave] || null   // dónde se ve en esta pantalla (lo guardado no cambia)
+    readonly property int colVista: sitio ? sitio.col : raiz.colEnVista(col, celdas[0])
+    readonly property int filaVista: sitio ? sitio.fila : raiz.filaEnVista(fila, celdas[1])
+    visible: !(sitio && sitio.oculto)
     readonly property bool editando: raiz.editando
     readonly property bool seleccionado: raiz.seleccion === clave
     readonly property alias contenido: cargador.item

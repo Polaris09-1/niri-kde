@@ -85,10 +85,10 @@ Scope {
     Reproduciendo {
         id: rep
         audio: root.audioActivo
-        pausarOndas: root.barraOculta || root.sesionBloqueada || !root.verMusica
+        pausarOndas: root.todasOcultas || root.sesionBloqueada || !root.verMusica
         ondasReales: root.opc("musica.ondasReales", true)
         esperaOcultar: root.opc("musica.esperaOcultar", 10) * 1000
-        retener: pildoraMusica.cursorDentro
+        retener: root.cursorEnMusica
         salida: root.sink
     }
     readonly property var jugador: rep.jugador
@@ -393,9 +393,9 @@ Scope {
     property bool porClic: false
     property string simCursor: ""        // solo para pruebas por IPC: hora|campana|pildora|panel|""
     readonly property string botonBajoCursor:
-        root.simCursor === "hora" || botonReloj.encima ? "calendario"
-        : root.simCursor === "campana" || campana.encima ? "avisos"
-        : root.simCursor === "pildora" || maPildora.containsMouse ? "estado" : ""
+        root.simCursor === "hora" ? "calendario"
+        : root.simCursor === "campana" ? "avisos"
+        : root.simCursor === "pildora" ? "estado" : root.botonReal
     readonly property bool cursorEnPanel: root.simCursor === "panel"
         || (root.panel === "estado" && (panelEstado.encima || panelEstado.pulsado || root.cursorEnGracia))
         || (root.relojAbierto && (panelCal.encima || panelCal.pulsado))
@@ -497,33 +497,37 @@ Scope {
     }
 
     // ===== Pantalla completa: barra escondida que baja con el cursor =====
+    // ===== Pantalla completa =====
     PantallaCompleta { id: pcompleta }
-    readonly property string salidaBarra: ventana.screen ? ventana.screen.name : ""
-    // simPantallaCompleta: solo pruebas por IPC ("si"|"no"|"" = lo que diga niri)
+    // simPantallaCompleta: solo pruebas por IPC ("si"|"no"|"" = lo que diga niri). Afecta a todas las barras
     property string simPantallaCompleta: ""
-    readonly property bool pantallaCompleta: root.esconderEnPantallaCompleta
-        && (root.simPantallaCompleta !== "" ? root.simPantallaCompleta === "si" : pcompleta.en(root.salidaBarra))
-    property bool barraRevelada: false
-    readonly property bool barraOculta: root.pantallaCompleta && !root.barraRevelada
-    // El cursor está en el sensor o en la franja de la barra (o simulado por IPC), o hay un panel
-    readonly property bool mantenerBarra: hoverBarra.hovered || root.simCursor !== "" || root.panel !== ""
-    onPantallaCompletaChanged: root.revisarBarra()
-    onMantenerBarraChanged: root.revisarBarra()
-    function revisarBarra() {
-        if (!root.pantallaCompleta) { timerRevelar.stop(); timerEsconder.stop(); root.barraRevelada = false; return }
-        if (root.mantenerBarra) { timerEsconder.stop(); if (!root.barraRevelada) timerRevelar.restart() }
-        else { timerRevelar.stop(); if (root.barraRevelada) timerEsconder.restart() }
+
+    // ===== Lo que depende de las barras =====
+    // La barra de los paneles: la que tiene el botón del que nacen
+    readonly property var barraActual: barras.instances.length > 0 ? barras.instances[0] : null
+    readonly property string salidaBarra: root.barraActual ? root.barraActual.salida : ""
+    readonly property bool pantallaCompleta: root.barraActual ? root.barraActual.pantallaCompleta : false
+    readonly property rect rIzq: root.barraActual ? root.barraActual.rIzq : Qt.rect(0, 0, 0, 0)
+    readonly property rect rReloj: root.barraActual ? root.barraActual.rReloj : Qt.rect(0, 0, 0, 0)
+    readonly property rect rMusica: root.barraActual ? root.barraActual.rMusica : Qt.rect(0, 0, 0, 0)
+    readonly property rect rDer: root.barraActual ? root.barraActual.rDer : Qt.rect(0, 0, 0, 0)
+    // Botón bajo el cursor en cualquier barra
+    readonly property string botonReal: {
+        var l = barras.instances
+        for (var i = 0; i < l.length; i++) if (l[i].botonEncima !== "") return l[i].botonEncima
+        return ""
     }
-    Timer {
-        id: timerRevelar
-        // Un panel abierto por IPC/atajo/dock (sin cursor) baja la barra al instante
-        interval: root.panel !== "" ? 0 : root.esperaAbrir
-        onTriggered: if (root.pantallaCompleta && root.mantenerBarra) root.barraRevelada = true
+    readonly property bool cursorEnMusica: {
+        var l = barras.instances
+        for (var i = 0; i < l.length; i++) if (l[i].musica.cursorDentro) return true
+        return false
     }
-    Timer {
-        id: timerEsconder
-        interval: root.esperaCerrar
-        onTriggered: if (!root.mantenerBarra) root.barraRevelada = false
+    // Las ondas de música solo se paran si no se ve ninguna barra
+    readonly property bool todasOcultas: {
+        var l = barras.instances
+        if (l.length === 0) return false
+        for (var i = 0; i < l.length; i++) if (!l[i].barraOculta) return false
+        return true
     }
 
     function abrirAlPasarSobre(nombre) {
@@ -545,7 +549,8 @@ Scope {
     function mostrarPanel(nombre, desde) {
         if (root.panel === nombre) { root.panel = ""; return }
         // Cada panel nace de su botón (la hora y la campanita son botones distintos)
-        var item = desde || (nombre === "estado" ? pildora : nombre === "avisos" ? campana : botonReloj)
+        var item = desde || (root.barraActual ? root.barraActual.botonDe(nombre) : null)
+        if (!item) return
         var pt = item.mapToItem(null, 0, 0)
         var r = Qt.rect(pt.x, pt.y, item.width, item.height)
         if (nombre === "estado") {
@@ -597,12 +602,12 @@ Scope {
         function ajustes(): string {
             return JSON.stringify({ conf: root.conf, esperaAbrir: root.esperaAbrir, esperaCerrar: root.esperaCerrar,
                 altoSensor: root.altoSensor, abrirAlPasar: root.abrirAlPasar, verMusica: root.verMusica,
-                islaIzq: islaIzq.visible, campana: campana.visible, esperaOcultar: rep.esperaOcultar })
+                islaIzq: root.barraActual ? root.barraActual.verIslaIzq : false, campana: root.barraActual ? root.barraActual.verCampana : false, esperaOcultar: rep.esperaOcultar })
         }
         // Estado de la píldora de música
         function musica(): string {
-            return JSON.stringify({ presente: rep.presente, sonando: rep.sonando, expandida: pildoraMusica.expandida,
-                ancho: pildoraMusica.width, titulo: rep.titulo, app: rep.nombreApp, conControles: !!rep.activo,
+            return JSON.stringify({ presente: rep.presente, sonando: rep.sonando, expandida: root.barraActual ? root.barraActual.musica.expandida : false,
+                ancho: root.barraActual ? root.barraActual.musica.width : 0, titulo: rep.titulo, app: rep.nombreApp, conControles: !!rep.activo,
                 audio: rep.audioConfirmado, quiereOndas: rep.quiereOndas, cavaFallo: rep.cavaFallo, niveles: rep.niveles })
         }
         // Simula dónde está el cursor (hora|campana|pildora|musica|panel|fuera) para probar sin mouse
@@ -624,8 +629,9 @@ Scope {
         function pantallaCompleta(): string {
             return JSON.stringify({ salida: root.salidaBarra, pantallaCompleta: root.pantallaCompleta,
                 niri: pcompleta.porSalida, ventana: pcompleta.ventanaPorSalida, vistaGeneral: pcompleta.vistaGeneral,
-                simulada: root.simPantallaCompleta, revelada: root.barraRevelada, oculta: root.barraOculta,
-                cursorArriba: hoverBarra.hovered, zona: ventana.exclusiveZone,
+                simulada: root.simPantallaCompleta, revelada: root.barraActual ? root.barraActual.barraRevelada : false,
+                oculta: root.barraActual ? root.barraActual.barraOculta : false,
+                cursorArriba: root.barraActual ? root.barraActual.cursorArriba : false, zona: root.barraActual ? root.barraActual.zona : 0,
                 avisosCallados: avisos.callarPantallaCompleta })
         }
         // si | no | auto (para probar sin una ventana a pantalla completa)
@@ -828,413 +834,471 @@ Scope {
     Component.onCompleted: refrescoNiri.start()
 
     // ===== La barra =====
-    PanelWindow {
-        screen: Principal.pantalla
-        visible: Principal.lista
-        id: ventana
-        anchors {
-            top: true
-            left: true
-            right: true
-        }
-        implicitHeight: root.altoIsla + 20
-        // En pantalla completa no reserva espacio (la ventana ocupa todo y la barra baja encima)
-        exclusionMode: root.pantallaCompleta ? ExclusionMode.Ignore : ExclusionMode.Normal
-        exclusiveZone: root.pantallaCompleta ? 0 : root.altoIsla + 12
-        color: "transparent"
-        WlrLayershell.layer: WlrLayer.Overlay
-        WlrLayershell.namespace: "hola"
+    // ===== Las barras =====
+    // Paso 1 de M3: sigue habiendo una sola, en el monitor principal. Lo de cada barra (pantalla completa, botones,
+    // máscara) vive en su "barra"; lo demás es común y está en root. La capa de paneles sigue a root.barraActual.
+    // Dentro de Variants no hace falta Principal.lista: cada pantalla crea y destruye sus propias ventanas.
+    Variants {
+        id: barras
+        model: Principal.pantalla ? [Principal.pantalla] : []
+        delegate: Scope {
+            id: barra
+            required property var modelData
+            readonly property string salida: modelData.name
+            // Dentro de un delegado, "tema: tema" se enlazaría consigo mismo: las piezas usan estos dos
+            readonly property var colores: tema
+            readonly property var repro: rep
 
-        // Normal: las islas son lo único clicable; el resto deja pasar el mouse.
-        // Pantalla completa escondida: solo el sensor fino del borde de arriba.
-        // Pantalla completa bajada: toda la franja (pasar de una isla a otra no la esconde).
-        mask: root.pantallaCompleta ? (root.barraRevelada ? regionFranja : regionSensor) : regionIslas
-        // Coordenadas explícitas, NO `Region { item: … }`: con `item` Quickshell mide la isla con sus
-        // transformaciones (Translate de entrada y de pantalla completa) y solo vuelve a medir cuando
-        // cambian su x/y/ancho/alto, no cuando termina la animación. Al salir de pantalla completa la
-        // medía aún escondida arriba (fuera de la ventana) y la barra se quedaba sin recibir el cursor.
-        // Así la máscara está siempre en la posición final de las islas, también durante la bajada.
-        property Region regionIslas: Region {
-            Region { x: islaIzq.x; y: islaIzq.y; width: islaIzq.visible ? islaIzq.width : 0; height: islaIzq.height }
-            Region { x: islaReloj.x; y: islaReloj.y; width: islaReloj.width; height: islaReloj.height }
-            Region { x: pildoraMusica.x; y: pildoraMusica.y; width: rep.presente && root.verMusica ? pildoraMusica.width : 0; height: pildoraMusica.height }
-            Region { x: islaDer.x; y: islaDer.y; width: islaDer.width; height: islaDer.height }
-        }
-        property Region regionSensor: Region { x: 0; y: 0; width: ventana.width; height: root.altoSensor }
-        property Region regionFranja: Region { x: 0; y: 0; width: ventana.width; height: ventana.height }
+            // ----- Pantalla completa: barra escondida que baja con el cursor -----
+            readonly property bool pantallaCompleta: root.esconderEnPantallaCompleta
+                && (root.simPantallaCompleta !== "" ? root.simPantallaCompleta === "si" : pcompleta.en(barra.salida))
+            property bool barraRevelada: false
+            readonly property bool barraOculta: barra.pantallaCompleta && !barra.barraRevelada
+            // El cursor está en el sensor o en la franja de la barra (o simulado por IPC), o hay un panel
+            readonly property bool mantenerBarra: hoverBarra.hovered || root.simCursor !== "" || root.panel !== ""
+            onPantallaCompletaChanged: barra.revisarBarra()
+            onMantenerBarraChanged: barra.revisarBarra()
+            function revisarBarra() {
+                if (!barra.pantallaCompleta) { timerRevelar.stop(); timerEsconder.stop(); barra.barraRevelada = false; return }
+                if (barra.mantenerBarra) { timerEsconder.stop(); if (!barra.barraRevelada) timerRevelar.restart() }
+                else { timerRevelar.stop(); if (barra.barraRevelada) timerEsconder.restart() }
+            }
+            Timer {
+                id: timerRevelar
+                // Un panel abierto por IPC/atajo/dock (sin cursor) baja la barra al instante
+                interval: root.panel !== "" ? 0 : root.esperaAbrir
+                onTriggered: if (barra.pantallaCompleta && barra.mantenerBarra) barra.barraRevelada = true
+            }
+            Timer {
+                id: timerEsconder
+                interval: root.esperaCerrar
+                onTriggered: if (!barra.mantenerBarra) barra.barraRevelada = false
+            }
 
-        Item {
-            anchors.fill: parent
+            // ----- Lo que necesitan root y la capa de paneles -----
+            readonly property string botonEncima: botonReloj.encima ? "calendario"
+                : campana.encima ? "avisos"
+                : maPildora.containsMouse ? "estado" : ""
+            function botonDe(nombre) { return nombre === "estado" ? pildora : nombre === "avisos" ? campana : botonReloj }
+            readonly property var musica: pildoraMusica
+            readonly property bool cursorArriba: hoverBarra.hovered
+            readonly property int zona: ventana.exclusiveZone
+            readonly property bool verIslaIzq: islaIzq.visible
+            readonly property bool verCampana: campana.visible
+            // Posición final de las islas (la capa de paneles las deja fuera de su máscara)
+            readonly property rect rIzq: Qt.rect(islaIzq.x, islaIzq.y, islaIzq.visible ? islaIzq.width : 0, islaIzq.height)
+            readonly property rect rReloj: Qt.rect(islaReloj.x, islaReloj.y, islaReloj.width, islaReloj.height)
+            readonly property rect rMusica: Qt.rect(pildoraMusica.x, pildoraMusica.y, rep.presente && root.verMusica ? pildoraMusica.width : 0, pildoraMusica.height)
+            readonly property rect rDer: Qt.rect(islaDer.x, islaDer.y, islaDer.width, islaDer.height)
 
-            // No se desplaza: así cubre el sensor aunque las islas estén escondidas arriba
-            HoverHandler { id: hoverBarra }
-
-            // Entrada con rebote al arrancar
-            Item {
-                anchors.fill: parent
-                opacity: root.mostrar ? 1 : 0
-                Behavior on opacity {
-                    NumberAnimation { duration: 250 }
+            PanelWindow {
+                screen: barra.modelData
+                id: ventana
+                anchors {
+                    top: true
+                    left: true
+                    right: true
                 }
-                transform: [
-                    Translate {
-                        y: root.mostrar ? 0 : -(root.altoIsla + 30)
-                        Behavior on y {
-                            NumberAnimation { duration: 400; easing.type: Easing.OutBack }
+                implicitHeight: root.altoIsla + 20
+                // En pantalla completa no reserva espacio (la ventana ocupa todo y la barra baja encima)
+                exclusionMode: barra.pantallaCompleta ? ExclusionMode.Ignore : ExclusionMode.Normal
+                exclusiveZone: barra.pantallaCompleta ? 0 : root.altoIsla + 12
+                color: "transparent"
+                WlrLayershell.layer: WlrLayer.Overlay
+                WlrLayershell.namespace: "hola"
+
+                // Normal: las islas son lo único clicable; el resto deja pasar el mouse.
+                // Pantalla completa escondida: solo el sensor fino del borde de arriba.
+                // Pantalla completa bajada: toda la franja (pasar de una isla a otra no la esconde).
+                mask: barra.pantallaCompleta ? (barra.barraRevelada ? regionFranja : regionSensor) : regionIslas
+                // Coordenadas explícitas, NO `Region { item: … }`: con `item` Quickshell mide la isla con sus
+                // transformaciones (Translate de entrada y de pantalla completa) y solo vuelve a medir cuando
+                // cambian su x/y/ancho/alto, no cuando termina la animación. Al salir de pantalla completa la
+                // medía aún escondida arriba (fuera de la ventana) y la barra se quedaba sin recibir el cursor.
+                // Así la máscara está siempre en la posición final de las islas, también durante la bajada.
+                property Region regionIslas: Region {
+                    Region { x: islaIzq.x; y: islaIzq.y; width: islaIzq.visible ? islaIzq.width : 0; height: islaIzq.height }
+                    Region { x: islaReloj.x; y: islaReloj.y; width: islaReloj.width; height: islaReloj.height }
+                    Region { x: pildoraMusica.x; y: pildoraMusica.y; width: rep.presente && root.verMusica ? pildoraMusica.width : 0; height: pildoraMusica.height }
+                    Region { x: islaDer.x; y: islaDer.y; width: islaDer.width; height: islaDer.height }
+                }
+                property Region regionSensor: Region { x: 0; y: 0; width: ventana.width; height: root.altoSensor }
+                property Region regionFranja: Region { x: 0; y: 0; width: ventana.width; height: ventana.height }
+
+                Item {
+                    anchors.fill: parent
+
+                    // No se desplaza: así cubre el sensor aunque las islas estén escondidas arriba
+                    HoverHandler { id: hoverBarra }
+
+                    // Entrada con rebote al arrancar
+                    Item {
+                        anchors.fill: parent
+                        opacity: root.mostrar ? 1 : 0
+                        Behavior on opacity {
+                            NumberAnimation { duration: 250 }
                         }
-                    },
-                    // Pantalla completa: sube y baja (sin rebote: 150 ms al bajar, 120 al subir)
-                    Translate {
-                        y: root.barraOculta ? -(root.altoIsla + 20) : 0
-                        Behavior on y {
-                            NumberAnimation {
-                                duration: root.barraOculta ? 120 : 150
-                                easing.type: root.barraOculta ? Easing.InCubic : Easing.OutCubic
-                            }
-                        }
-                    }
-                ]
-
-                // ---------- Isla izquierda: workspaces + ventana activa ----------
-                Rectangle {
-                    id: islaIzq
-                    visible: root.opc("barra.islaIzq", true)
-                    anchors.left: parent.left
-                    anchors.leftMargin: 10
-                    anchors.top: parent.top
-                    anchors.topMargin: 8
-                    height: root.altoIsla
-                    width: filaIzq.width + 16
-                    radius: root.altoIsla / 2
-                    color: root.alfa(tema.surface, root.opacidadIsla)
-                    border.color: root.alfa(tema.primary, 0.5)
-                    border.width: 1.5
-                    Behavior on width {
-                        NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
-                    }
-
-                    Row {
-                        id: filaIzq
-                        anchors.centerIn: parent
-                        spacing: 6
-
-                        // Workspaces como pastillas
-                        Row {
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 6
-                            leftPadding: 6
-                            rightPadding: 4
-
-                            Repeater {
-                                model: root.workspaces.length
-
-                                delegate: Rectangle {
-                                    id: pill
-                                    required property int index
-                                    property var ws: root.workspaces[pill.index] || ({})
-                                    property bool activo: pill.ws.is_active === true
-
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    height: 10
-                                    width: pill.activo ? 30 : (maWs.containsMouse ? 16 : 10)
-                                    radius: 5
-                                    color: pill.activo ? tema.primary
-                                        : root.alfa(tema.surfaceText, maWs.containsMouse ? 0.6 : 0.3)
-                                    Behavior on width {
-                                        NumberAnimation { duration: 300; easing.type: Easing.OutBack }
-                                    }
-                                    Behavior on color {
-                                        ColorAnimation { duration: 200 }
-                                    }
-
-                                    MouseArea {
-                                        id: maWs
-                                        anchors.fill: parent
-                                        anchors.margins: -4
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: root.ejecutar(["niri", "msg", "action", "focus-workspace", String(pill.ws.idx)])
+                        transform: [
+                            Translate {
+                                y: root.mostrar ? 0 : -(root.altoIsla + 30)
+                                Behavior on y {
+                                    NumberAnimation { duration: 400; easing.type: Easing.OutBack }
+                                }
+                            },
+                            // Pantalla completa: sube y baja (sin rebote: 150 ms al bajar, 120 al subir)
+                            Translate {
+                                y: barra.barraOculta ? -(root.altoIsla + 20) : 0
+                                Behavior on y {
+                                    NumberAnimation {
+                                        duration: barra.barraOculta ? 120 : 150
+                                        easing.type: barra.barraOculta ? Easing.InCubic : Easing.OutCubic
                                     }
                                 }
                             }
-                        }
+                        ]
 
-                        // Ventana activa: clic abre la vista general de niri
-                        Boton {
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: root.tituloVentana !== "" && root.opc("barra.titulo", true)
-                            tema: tema
-                            imagen: root.iconoApp(root.appVentana)
-                            texto: root.tituloVentana
-                            anchoMaxTexto: 320
-                            onClic: root.ejecutar(["niri", "msg", "action", "toggle-overview"])
-                        }
-                    }
-                }
-
-                // ---------- Reproduciendo ahora: a la izquierda de la hora, crece hacia la izquierda ----------
-                PildoraMusica {
-                    id: pildoraMusica
-                    anchors.right: islaReloj.left
-                    anchors.rightMargin: 8
-                    anchors.top: parent.top
-                    anchors.topMargin: 8
-                    rep: rep
-                    s: root
-                    tema: tema
-                    simEncima: root.simCursor === "musica"
-                    disponible: islaReloj.x - 8 - (islaIzq.visible ? islaIzq.x + islaIzq.width + 8 : 10)
-                    habilitada: root.verMusica
-                    onAbrir: root.alternar("calendario", pildoraMusica)
-                }
-
-                // ---------- Isla central: hora (abre el calendario) ----------
-                Rectangle {
-                    id: islaReloj
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.top: parent.top
-                    anchors.topMargin: 8
-                    height: root.altoIsla
-                    width: filaReloj.width + 16
-                    radius: root.altoIsla / 2
-                    color: root.alfa(tema.surface, root.opacidadIsla)
-                    border.color: root.alfa(tema.primary, 0.5)
-                    border.width: 1.5
-                    Behavior on color {
-                        ColorAnimation { duration: 200 }
-                    }
-
-                    // Dos botones con su propio fondo: hora/fecha → calendario · campanita → notificaciones
-                    Row {
-                        id: filaReloj
-                        anchors.centerIn: parent
-                        spacing: 4
-                        Boton {
-                            id: botonReloj
-                            tema: tema
-                            activo: root.panel === "calendario"
-                            icono: Qt.formatDateTime(reloj.date, "hh:mm")
-                            texto: root.opc("barra.fecha", true) ? reloj.date.toLocaleDateString(Qt.locale("es_EC"), "ddd d MMM") : ""
-                            onClic: root.alternar("calendario")
-                        }
-                        // Campanita (siempre visible): tachada = No molestar; con número = avisos sin ver
-                        Boton {
-                            id: campana
-                            visible: root.opc("barra.campana", true)
-                            tema: tema
-                            activo: root.panel === "avisos"
-                            icono: root.ic(avisos.noMolestar ? 0xF009B : avisos.sinLeer > 0 ? 0xF116B : 0xF009C)
-                            colorIcono: avisos.noMolestar ? root.alfa(tema.surfaceText, 0.6) : tema.primary
-                            texto: avisos.sinLeer > 0 ? String(Math.min(avisos.sinLeer, 99)) : ""
-                            onClic: root.alternar("avisos")
-                        }
-                    }
-                }
-
-                // ---------- Isla derecha: bandeja + píldora de estado ----------
-                Rectangle {
-                    id: islaDer
-                    anchors.right: parent.right
-                    anchors.rightMargin: 10
-                    anchors.top: parent.top
-                    anchors.topMargin: 8
-                    height: root.altoIsla
-                    width: filaDer.width + 12
-                    radius: root.altoIsla / 2
-                    color: root.alfa(tema.surface, root.opacidadIsla)
-                    border.color: root.alfa(tema.primary, 0.5)
-                    border.width: 1.5
-                    Behavior on width {
-                        NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
-                    }
-
-                    Row {
-                        id: filaDer
-                        anchors.centerIn: parent
-                        spacing: 4
-
-                        // Bandeja del sistema (solo si hay iconos)
-                        Row {
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: SystemTray.items.values.length > 0 && root.opc("barra.bandeja", true)
-                            spacing: 2
-                            leftPadding: 4
-
-                            Repeater {
-                                model: SystemTray.items
-
-                                delegate: Item {
-                                    id: icBandeja
-                                    required property var modelData
-                                    width: 26
-                                    height: 26
-
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        radius: width / 2
-                                        color: tema.primary
-                                        opacity: maBandeja.containsMouse ? 0.18 : 0
-                                        Behavior on opacity {
-                                            NumberAnimation { duration: 150 }
-                                        }
-                                    }
-
-                                    Image {
-                                        anchors.centerIn: parent
-                                        width: 16
-                                        height: 16
-                                        sourceSize.width: 32
-                                        sourceSize.height: 32
-                                        source: icBandeja.modelData.icon
-                                    }
-
-                                    MouseArea {
-                                        id: maBandeja
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: m => {
-                                            var it = icBandeja.modelData
-                                            if (m.button === Qt.MiddleButton) it.secondaryActivate()
-                                            else if (m.button === Qt.RightButton || it.onlyMenu) {
-                                                if (it.hasMenu) {
-                                                    var pt = icBandeja.mapToItem(null, 0, icBandeja.height + 8)
-                                                    it.display(ventana, pt.x, pt.y)
-                                                }
-                                            } else it.activate()
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Grabando (● 00:12, clic detiene) o cuenta atrás de captura
+                        // ---------- Isla izquierda: workspaces + ventana activa ----------
                         Rectangle {
-                            id: indicadorGrab
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: grabadora.grabando || root.cuentaCaptura > 0
-                            height: 30
-                            width: filaGrab.width + 20
-                            radius: height / 2
-                            color: grabadora.grabando ? Qt.rgba(1, 0.33, 0.33, maGrab.containsMouse ? 0.4 : 0.25) : root.alfa(tema.primary, 0.2)
+                            id: islaIzq
+                            visible: root.opc("barra.islaIzq", true)
+                            anchors.left: parent.left
+                            anchors.leftMargin: 10
+                            anchors.top: parent.top
+                            anchors.topMargin: 8
+                            height: root.altoIsla
+                            width: filaIzq.width + 16
+                            radius: root.altoIsla / 2
+                            color: root.alfa(tema.surface, root.opacidadIsla)
+                            border.color: root.alfa(tema.primary, 0.5)
+                            border.width: 1.5
+                            Behavior on width {
+                                NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
+                            }
+
                             Row {
-                                id: filaGrab
+                                id: filaIzq
                                 anchors.centerIn: parent
                                 spacing: 6
-                                Rectangle {
-                                    visible: grabadora.grabando
+
+                                // Workspaces como pastillas
+                                Row {
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: 9
-                                    height: 9
-                                    radius: 4.5
-                                    color: "#ff5555"
-                                    SequentialAnimation on opacity {
-                                        running: grabadora.grabando
-                                        loops: Animation.Infinite
-                                        NumberAnimation { to: 0.25; duration: 600 }
-                                        NumberAnimation { to: 1; duration: 600 }
+                                    spacing: 6
+                                    leftPadding: 6
+                                    rightPadding: 4
+
+                                    Repeater {
+                                        model: root.workspaces.length
+
+                                        delegate: Rectangle {
+                                            id: pill
+                                            required property int index
+                                            property var ws: root.workspaces[pill.index] || ({})
+                                            property bool activo: pill.ws.is_active === true
+
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            height: 10
+                                            width: pill.activo ? 30 : (maWs.containsMouse ? 16 : 10)
+                                            radius: 5
+                                            color: pill.activo ? tema.primary
+                                                : root.alfa(tema.surfaceText, maWs.containsMouse ? 0.6 : 0.3)
+                                            Behavior on width {
+                                                NumberAnimation { duration: 300; easing.type: Easing.OutBack }
+                                            }
+                                            Behavior on color {
+                                                ColorAnimation { duration: 200 }
+                                            }
+
+                                            MouseArea {
+                                                id: maWs
+                                                anchors.fill: parent
+                                                anchors.margins: -4
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: root.ejecutar(["niri", "msg", "action", "focus-workspace", String(pill.ws.idx)])
+                                            }
+                                        }
                                     }
                                 }
-                                Text {
-                                    text: grabadora.grabando ? (maGrab.containsMouse ? "Detener" : grabadora.tiempo())
-                                        : root.ic(0xF0100) + "  " + root.cuentaCaptura
-                                    font.family: root.fuente
-                                    font.pixelSize: 12
-                                    font.bold: true
-                                    color: tema.surfaceText
+
+                                // Ventana activa: clic abre la vista general de niri
+                                Boton {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: root.tituloVentana !== "" && root.opc("barra.titulo", true)
+                                    tema: barra.colores
+                                    imagen: root.iconoApp(root.appVentana)
+                                    texto: root.tituloVentana
+                                    anchoMaxTexto: 320
+                                    onClic: root.ejecutar(["niri", "msg", "action", "toggle-overview"])
                                 }
                             }
-                            MouseArea {
-                                id: maGrab
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: if (grabadora.grabando) grabadora.detener()
-                            }
                         }
 
-                        // Cafeína encendida: taza; clic la apaga
+                        // ---------- Reproduciendo ahora: a la izquierda de la hora, crece hacia la izquierda ----------
+                        PildoraMusica {
+                            id: pildoraMusica
+                            anchors.right: islaReloj.left
+                            anchors.rightMargin: 8
+                            anchors.top: parent.top
+                            anchors.topMargin: 8
+                            rep: barra.repro
+                            s: root
+                            tema: barra.colores
+                            simEncima: root.simCursor === "musica"
+                            disponible: islaReloj.x - 8 - (islaIzq.visible ? islaIzq.x + islaIzq.width + 8 : 10)
+                            habilitada: root.verMusica
+                            onAbrir: root.alternar("calendario", pildoraMusica)
+                        }
+
+                        // ---------- Isla central: hora (abre el calendario) ----------
                         Rectangle {
-                            id: indicadorCafeina
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: root.cafeina && root.opc("barra.cafeina", true)
-                            width: 30
-                            height: 30
-                            radius: 15
-                            color: root.alfa(tema.primary, maCafeinaBarra.containsMouse ? 0.35 : 0.2)
+                            id: islaReloj
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.top: parent.top
+                            anchors.topMargin: 8
+                            height: root.altoIsla
+                            width: filaReloj.width + 16
+                            radius: root.altoIsla / 2
+                            color: root.alfa(tema.surface, root.opacidadIsla)
+                            border.color: root.alfa(tema.primary, 0.5)
+                            border.width: 1.5
                             Behavior on color {
-                                ColorAnimation { duration: 150 }
+                                ColorAnimation { duration: 200 }
                             }
-                            Text {
+
+                            // Dos botones con su propio fondo: hora/fecha → calendario · campanita → notificaciones
+                            Row {
+                                id: filaReloj
                                 anchors.centerIn: parent
-                                text: root.ic(0xF0176)
-                                font.family: root.fuente
-                                font.pixelSize: 15
-                                color: tema.primary
-                            }
-                            MouseArea {
-                                id: maCafeinaBarra
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: root.alternarCafeina()
+                                spacing: 4
+                                Boton {
+                                    id: botonReloj
+                                    tema: barra.colores
+                                    activo: root.panel === "calendario"
+                                    icono: Qt.formatDateTime(reloj.date, "hh:mm")
+                                    texto: root.opc("barra.fecha", true) ? reloj.date.toLocaleDateString(Qt.locale("es_EC"), "ddd d MMM") : ""
+                                    onClic: root.alternar("calendario")
+                                }
+                                // Campanita (siempre visible): tachada = No molestar; con número = avisos sin ver
+                                Boton {
+                                    id: campana
+                                    visible: root.opc("barra.campana", true)
+                                    tema: barra.colores
+                                    activo: root.panel === "avisos"
+                                    icono: root.ic(avisos.noMolestar ? 0xF009B : avisos.sinLeer > 0 ? 0xF116B : 0xF009C)
+                                    colorIcono: avisos.noMolestar ? root.alfa(tema.surfaceText, 0.6) : tema.primary
+                                    texto: avisos.sinLeer > 0 ? String(Math.min(avisos.sinLeer, 99)) : ""
+                                    onClic: root.alternar("avisos")
+                                }
                             }
                         }
 
-                        // Píldora de estado: clic abre el panel, rueda cambia el volumen
+                        // ---------- Isla derecha: bandeja + píldora de estado ----------
                         Rectangle {
-                            id: pildora
-                            anchors.verticalCenter: parent.verticalCenter
-                            height: 30
-                            width: filaPildora.width + 22
-                            radius: height / 2
-                            color: root.panel === "estado" ? root.alfa(tema.primary, 0.28)
-                                : root.alfa(tema.primary, maPildora.containsMouse ? 0.18 : 0.08)
-                            Behavior on color {
-                                ColorAnimation { duration: 180 }
+                            id: islaDer
+                            anchors.right: parent.right
+                            anchors.rightMargin: 10
+                            anchors.top: parent.top
+                            anchors.topMargin: 8
+                            height: root.altoIsla
+                            width: filaDer.width + 12
+                            radius: root.altoIsla / 2
+                            color: root.alfa(tema.surface, root.opacidadIsla)
+                            border.color: root.alfa(tema.primary, 0.5)
+                            border.width: 1.5
+                            Behavior on width {
+                                NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
                             }
 
                             Row {
-                                id: filaPildora
+                                id: filaDer
                                 anchors.centerIn: parent
-                                spacing: 12
-                                scale: maPildora.pressed ? 0.9 : 1
-                                Behavior on scale {
-                                    NumberAnimation { duration: 120; easing.type: Easing.OutBack }
+                                spacing: 4
+
+                                // Bandeja del sistema (solo si hay iconos)
+                                Row {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: SystemTray.items.values.length > 0 && root.opc("barra.bandeja", true)
+                                    spacing: 2
+                                    leftPadding: 4
+
+                                    Repeater {
+                                        model: SystemTray.items
+
+                                        delegate: Item {
+                                            id: icBandeja
+                                            required property var modelData
+                                            width: 26
+                                            height: 26
+
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                radius: width / 2
+                                                color: tema.primary
+                                                opacity: maBandeja.containsMouse ? 0.18 : 0
+                                                Behavior on opacity {
+                                                    NumberAnimation { duration: 150 }
+                                                }
+                                            }
+
+                                            Image {
+                                                anchors.centerIn: parent
+                                                width: 16
+                                                height: 16
+                                                sourceSize.width: 32
+                                                sourceSize.height: 32
+                                                source: icBandeja.modelData.icon
+                                            }
+
+                                            MouseArea {
+                                                id: maBandeja
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: m => {
+                                                    var it = icBandeja.modelData
+                                                    if (m.button === Qt.MiddleButton) it.secondaryActivate()
+                                                    else if (m.button === Qt.RightButton || it.onlyMenu) {
+                                                        if (it.hasMenu) {
+                                                            var pt = icBandeja.mapToItem(null, 0, icBandeja.height + 8)
+                                                            it.display(ventana, pt.x, pt.y)
+                                                        }
+                                                    } else it.activate()
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
 
-                                Text {
-                                    visible: root.opc("barra.iconoWifi", true)
-                                    text: root.iconoWifi()
-                                    font.family: root.fuente
-                                    font.pixelSize: 15
-                                    color: tema.primary
+                                // Grabando (● 00:12, clic detiene) o cuenta atrás de captura
+                                Rectangle {
+                                    id: indicadorGrab
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: grabadora.grabando || root.cuentaCaptura > 0
+                                    height: 30
+                                    width: filaGrab.width + 20
+                                    radius: height / 2
+                                    color: grabadora.grabando ? Qt.rgba(1, 0.33, 0.33, maGrab.containsMouse ? 0.4 : 0.25) : root.alfa(tema.primary, 0.2)
+                                    Row {
+                                        id: filaGrab
+                                        anchors.centerIn: parent
+                                        spacing: 6
+                                        Rectangle {
+                                            visible: grabadora.grabando
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: 9
+                                            height: 9
+                                            radius: 4.5
+                                            color: "#ff5555"
+                                            SequentialAnimation on opacity {
+                                                running: grabadora.grabando
+                                                loops: Animation.Infinite
+                                                NumberAnimation { to: 0.25; duration: 600 }
+                                                NumberAnimation { to: 1; duration: 600 }
+                                            }
+                                        }
+                                        Text {
+                                            text: grabadora.grabando ? (maGrab.containsMouse ? "Detener" : grabadora.tiempo())
+                                                : root.ic(0xF0100) + "  " + root.cuentaCaptura
+                                            font.family: root.fuente
+                                            font.pixelSize: 12
+                                            font.bold: true
+                                            color: tema.surfaceText
+                                        }
+                                    }
+                                    MouseArea {
+                                        id: maGrab
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: if (grabadora.grabando) grabadora.detener()
+                                    }
                                 }
-                                Text {
-                                    visible: root.opc("barra.iconoVolumen", true)
-                                    text: root.iconoVolumen()
-                                    font.family: root.fuente
-                                    font.pixelSize: 15
-                                    color: tema.primary
-                                }
-                                Text {
-                                    visible: root.opc("barra.iconoBateria", true)
-                                    text: root.iconoBateria()
-                                    font.family: root.fuente
-                                    font.pixelSize: 15
-                                    color: (root.bateria <= 15 && !root.cargando) ? "#ff5555" : tema.primary
-                                }
-                            }
 
-                            MouseArea {
-                                id: maPildora
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                acceptedButtons: Qt.LeftButton | Qt.RightButton
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: m => m.button === Qt.RightButton ? root.abrirPagina("audio") : root.alternar("estado")
-                                onWheel: w => root.cambiarVolumen(w.angleDelta.y > 0 ? 0.02 : -0.02)
+                                // Cafeína encendida: taza; clic la apaga
+                                Rectangle {
+                                    id: indicadorCafeina
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: root.cafeina && root.opc("barra.cafeina", true)
+                                    width: 30
+                                    height: 30
+                                    radius: 15
+                                    color: root.alfa(tema.primary, maCafeinaBarra.containsMouse ? 0.35 : 0.2)
+                                    Behavior on color {
+                                        ColorAnimation { duration: 150 }
+                                    }
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: root.ic(0xF0176)
+                                        font.family: root.fuente
+                                        font.pixelSize: 15
+                                        color: tema.primary
+                                    }
+                                    MouseArea {
+                                        id: maCafeinaBarra
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.alternarCafeina()
+                                    }
+                                }
+
+                                // Píldora de estado: clic abre el panel, rueda cambia el volumen
+                                Rectangle {
+                                    id: pildora
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    height: 30
+                                    width: filaPildora.width + 22
+                                    radius: height / 2
+                                    color: root.panel === "estado" ? root.alfa(tema.primary, 0.28)
+                                        : root.alfa(tema.primary, maPildora.containsMouse ? 0.18 : 0.08)
+                                    Behavior on color {
+                                        ColorAnimation { duration: 180 }
+                                    }
+
+                                    Row {
+                                        id: filaPildora
+                                        anchors.centerIn: parent
+                                        spacing: 12
+                                        scale: maPildora.pressed ? 0.9 : 1
+                                        Behavior on scale {
+                                            NumberAnimation { duration: 120; easing.type: Easing.OutBack }
+                                        }
+
+                                        Text {
+                                            visible: root.opc("barra.iconoWifi", true)
+                                            text: root.iconoWifi()
+                                            font.family: root.fuente
+                                            font.pixelSize: 15
+                                            color: tema.primary
+                                        }
+                                        Text {
+                                            visible: root.opc("barra.iconoVolumen", true)
+                                            text: root.iconoVolumen()
+                                            font.family: root.fuente
+                                            font.pixelSize: 15
+                                            color: tema.primary
+                                        }
+                                        Text {
+                                            visible: root.opc("barra.iconoBateria", true)
+                                            text: root.iconoBateria()
+                                            font.family: root.fuente
+                                            font.pixelSize: 15
+                                            color: (root.bateria <= 15 && !root.cargando) ? "#ff5555" : tema.primary
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: maPildora
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: m => m.button === Qt.RightButton ? root.abrirPagina("audio") : root.alternar("estado")
+                                        onWheel: w => root.cambiarVolumen(w.angleDelta.y > 0 ? 0.02 : -0.02)
+                                    }
+                                }
                             }
                         }
                     }
@@ -1267,10 +1331,10 @@ Scope {
         // a sus botones aunque haya un panel abierto encima
         mask: Region {
             item: raizCapa
-            Region { x: islaIzq.x; y: islaIzq.y; width: islaIzq.visible ? islaIzq.width : 0; height: islaIzq.height; intersection: Intersection.Subtract }
-            Region { x: islaReloj.x; y: islaReloj.y; width: islaReloj.width; height: islaReloj.height; intersection: Intersection.Subtract }
-            Region { x: pildoraMusica.x; y: pildoraMusica.y; width: rep.presente && root.verMusica ? pildoraMusica.width : 0; height: pildoraMusica.height; intersection: Intersection.Subtract }
-            Region { x: islaDer.x; y: islaDer.y; width: islaDer.width; height: islaDer.height; intersection: Intersection.Subtract }
+            Region { x: root.rIzq.x; y: root.rIzq.y; width: root.rIzq.width; height: root.rIzq.height; intersection: Intersection.Subtract }
+            Region { x: root.rReloj.x; y: root.rReloj.y; width: root.rReloj.width; height: root.rReloj.height; intersection: Intersection.Subtract }
+            Region { x: root.rMusica.x; y: root.rMusica.y; width: root.rMusica.width; height: root.rMusica.height; intersection: Intersection.Subtract }
+            Region { x: root.rDer.x; y: root.rDer.y; width: root.rDer.width; height: root.rDer.height; intersection: Intersection.Subtract }
         }
 
         Item {

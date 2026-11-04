@@ -44,26 +44,14 @@ Scope {
         }
     }
 
-    // ===== Estado =====
+    // ===== Estado común: el fondo es el mismo en todos los monitores =====
     property string ruta: ""          // fondo puesto (o el que está entrando)
     property string rutaImagen: ""    // imagen fija (fotograma si es vídeo/GIF)
-    property bool usarA: true         // qué lienzo es el actual
-    property bool enTransicion: false
-    property bool tapado: false       // las ventanas tapan (casi) todo el workspace visible
-    property real cobertura: 0        // fracción de pantalla tapada (para "info")
     property bool bloqueado: false    // sesión bloqueada (avisa el módulo "bloqueo")
     property bool primeraVez: true
-    property var pendiente: null      // { tipo, x, y } mientras carga el fondo nuevo
 
-    readonly property var lienzoActual: usarA ? lienzoA : lienzoB
-    readonly property var lienzoOtro: usarA ? lienzoB : lienzoA
-    readonly property bool animado: lienzoActual.tipo === "video" || lienzoActual.tipo === "gif"
+    readonly property bool animado: /\.(mp4|webm|mkv|mov|gif)$/i.test(root.ruta)
     readonly property bool conBateria: UPower.onBattery
-    readonly property string motivoPausa: root.bloqueado ? "bloqueo"
-        : (ajustes.pausarTapado && root.tapado) ? "tapado"
-        : (ajustes.pausarConBateria && root.conBateria) ? "bateria" : ""
-    readonly property bool pausado: root.motivoPausa !== ""
-
     readonly property var tipos: ({ fundido: 0, circulo: 1, ola: 2, barrido: 3 })
 
     // Colores de matugen. Este módulo NO se recarga solo cuando cambia un archivo
@@ -93,60 +81,30 @@ Scope {
         }
     }
 
+    // x, y: punto de origen en el monitor enfocado (la galería se abre ahí). Los demás, desde el centro.
     function poner(nueva, tipo, x, y) {
-        if (nueva === "") return
-        if (nueva === root.ruta) return
+        if (nueva === "" || nueva === root.ruta) return
         root.ruta = nueva
-
-        if (root.primeraVez) {
-            // Al arrancar: sin transición
-            lienzoActual.ruta = nueva
-            return
-        }
-        if (root.enTransicion) {
-            animacion.complete()     // termina la anterior de golpe
-        }
-        root.pendiente = { tipo: tipo, x: x, y: y }
-        lienzoOtro.ruta = nueva
-        porSiAcaso.restart()
-        if (lienzoOtro.listo) empezar()
-    }
-
-    function empezar() {
-        if (!root.pendiente) return
-        porSiAcaso.stop()
-        var p = root.pendiente
-        root.pendiente = null
-
-        var t = (p.tipo === "" || p.tipo === "-") ? ajustes.transicion : p.tipo
+        var t = (tipo === "" || tipo === "-") ? ajustes.transicion : tipo
         if (t === "aleatoria" || !(t in root.tipos)) {
             var nombres = ["circulo", "ola", "barrido", "fundido"]
             t = nombres[Math.floor(Math.random() * nombres.length)]
         }
-        efecto.tipo = root.tipos[t]
-        efecto.centro = Qt.point(p.x < 0 ? 0.5 : Math.min(1, p.x / nitida.width),
-                                 p.y < 0 ? 0.5 : Math.min(1, p.y / nitida.height))
-        fuenteDesde.sourceItem = lienzoActual
-        fuenteHasta.sourceItem = lienzoOtro
-        efecto.progreso = 0
-        root.enTransicion = true
-        animacion.duration = Math.max(150, ajustes.duracion)
-        animacion.restart()
+        Principal.pedirEnfocada(enfocada => {
+            if (root.ruta !== nueva) return
+            var l = pantallas.instances
+            for (var i = 0; i < l.length; i++) {
+                var aqui = l[i].salida === enfocada
+                l[i].poner(nueva, t, aqui ? x : -1, aqui ? y : -1)
+            }
+        })
     }
 
-    function terminar() {
-        root.usarA = !root.usarA
-        root.enTransicion = false
-        lienzoOtro.ruta = ""          // libera el fondo viejo (y su decodificador de vídeo)
-        fuenteDesde.sourceItem = null
-        fuenteHasta.sourceItem = null
-    }
-
-    // Si el fondo nuevo nunca avisa de que está listo, transiciona igual
-    Timer {
-        id: porSiAcaso
-        interval: 3000
-        onTriggered: root.empezar()
+    function monitorPrincipal() {
+        var n = Principal.pantalla ? Principal.pantalla.name : ""
+        var l = pantallas.instances
+        for (var i = 0; i < l.length; i++) if (l[i].salida === n) return l[i]
+        return l.length > 0 ? l[0] : null
     }
 
     IpcHandler {
@@ -154,35 +112,32 @@ Scope {
         function poner(ruta: string, tipo: string, x: int, y: int): void {
             root.poner(ruta, tipo, x, y)
         }
-        // Para probar sin mirar la pantalla: guarda la capa nítida como imagen
+        // Para probar sin mirar la pantalla: guarda la capa nítida del monitor principal como imagen
         function captura(archivo: string): void {
-            escenaNitida.grabToImage(r => r.saveToFile(archivo), Qt.size(960, 540))
+            var m = root.monitorPrincipal()
+            if (m) m.capturar(archivo)
         }
         function bloqueo(estado: string): string {
             root.bloqueado = estado === "si"
             return root.bloqueado ? "pausado" : "reanudado"
         }
         function info(): string {
-            return JSON.stringify({
+            var m = root.monitorPrincipal()
+            var l = pantallas.instances
+            var todas = []
+            for (var i = 0; i < l.length; i++) todas.push(l[i].estado())
+            return JSON.stringify(Object.assign({
                 ruta: root.ruta,
                 imagen: root.rutaImagen,
-                tipo: root.lienzoActual.tipo,
-                video: root.lienzoActual.rutaVideo,
-                estadoVideo: root.lienzoActual.estadoVideo,
-                listo: root.lienzoActual.listo,
-                enTransicion: root.enTransicion,
-                tapado: root.tapado,
-                cobertura: Math.round(root.cobertura * 100) / 100,
                 bloqueado: root.bloqueado,
                 conBateria: root.conBateria,
-                pausado: root.pausado && root.animado,
-                motivoPausa: root.animado ? root.motivoPausa : "",
                 ajustesVideo: { pausarTapado: ajustes.pausarTapado, pausarConBateria: ajustes.pausarConBateria,
                                 optimizar: ajustes.optimizarVideo, fps: ajustes.fpsVideo },
                 transicion: ajustes.transicion,
                 duracion: ajustes.duracion,
-                superficie: tema.surface.toString()
-            })
+                superficie: tema.surface.toString(),
+                pantallas: todas
+            }, m ? m.estado() : {}))
         }
     }
 
@@ -220,14 +175,10 @@ Scope {
         id: quitarSwaybg
         command: ["pkill", "-x", "swaybg"]
     }
-    Connections {
-        target: root.lienzoActual
-        function onListoChanged() {
-            if (root.primeraVez && root.lienzoActual.listo) {
-                root.primeraVez = false
-                quitarSwaybg.running = true
-            }
-        }
+    function alPrimerFondo() {
+        if (!root.primeraVez) return
+        root.primeraVez = false
+        quitarSwaybg.running = true
     }
 
     // ===== ¿Hay una ventana que tapa el fondo? (solo importa con vídeo/GIF) =====
@@ -264,41 +215,8 @@ Scope {
                     var lineas = text.trim().split("\n")
                     var ws = JSON.parse(lineas[0])
                     var ventanas = JSON.parse(lineas[1])
-                    var salida = nitida.screen ? nitida.screen.name : ""
-                    var activos = ws.filter(w => w.is_active && (salida === "" || w.output === salida))
-                    var ids = activos.map(w => w.id)
-                    var enfocadas = activos.map(w => w.active_window_id)
-                    var W = nitida.width, H = nitida.height
-                    var area = W * H
-                    var vis = ventanas.filter(v => ids.indexOf(v.workspace_id) >= 0 && v.layout)
-                    // Flotantes a la vista: la más grande
-                    var flotante = 0
-                    vis.forEach(v => {
-                        if (v.is_floating && v.layout.tile_pos_in_workspace_view !== null)
-                            flotante = Math.max(flotante, v.layout.tile_size[0] * v.layout.tile_size[1])
-                    })
-                    // Mosaico (niri en scroll): por columna, ancho = el de su ventana más ancha y
-                    // alto = suma de sus ventanas. Si las columnas juntas llenan el ancho, niri
-                    // siempre muestra la pantalla llena; si no, solo tapan lo que miden.
-                    var columnas = {}
-                    vis.forEach(v => {
-                        var pos = v.layout.pos_in_scrolling_layout
-                        if (v.is_floating || !pos) return
-                        var k = v.workspace_id + ":" + pos[0]
-                        var c = columnas[k] || { w: 0, h: 0 }
-                        c.w = Math.max(c.w, v.layout.tile_size[0])
-                        c.h += v.layout.tile_size[1]
-                        columnas[k] = c
-                    })
-                    var ancho = 0, alto = 0
-                    Object.keys(columnas).forEach(k => {
-                        ancho += columnas[k].w + 16          // + hueco entre columnas
-                        alto = Math.max(alto, columnas[k].h)
-                    })
-                    var mosaico = Math.min(W, ancho) * Math.min(H, alto)
-                    root.cobertura = Math.min(1, Math.max(mosaico, flotante) / Math.max(1, area))
-                    // ≥ 85 %: pantalla completa, maximizada o columnas que llenan la pantalla
-                    root.tapado = root.cobertura >= 0.85
+                    var l = pantallas.instances
+                    for (var i = 0; i < l.length; i++) l[i].revisarTapado(ws, ventanas)
                 } catch (e) {
                     console.warn("fondo: no pude leer niri:", e)
                 }
@@ -306,127 +224,265 @@ Scope {
         }
     }
 
-    // ===================== Capa nítida =====================
-    PanelWindow {
-        screen: Principal.pantalla
-        visible: Principal.lista
-        id: nitida
-        anchors {
-            top: true
-            bottom: true
-            left: true
-            right: true
-        }
-        exclusionMode: ExclusionMode.Ignore
-        WlrLayershell.layer: WlrLayer.Background
-        WlrLayershell.namespace: "fondo-nitido"
-        color: tema.surface
+    // ===== Un fondo completo por monitor: cada uno con su transición, su vídeo y su pausa =====
+    Variants {
+        id: pantallas
+        model: Quickshell.screens
+        delegate: Scope {
+            id: mon
+            required property var modelData
+            readonly property string salida: modelData.name
 
-        Item {
-            id: escenaNitida
-            anchors.fill: parent
+            property string puesta: ""        // fondo de este monitor
+            property bool usarA: true         // qué lienzo es el actual
+            property bool enTransicion: false
+            property bool tapado: false       // las ventanas tapan (casi) todo su workspace visible
+            property real cobertura: 0        // fracción tapada (para "info")
+            property bool primera: true       // aún sin fondo: el primero entra sin transición
+            property var pendiente: null      // { tipo, x, y } mientras carga el fondo nuevo
 
-        Lienzo {
-            id: lienzoA
-            anchors.fill: parent
-            optimizar: ajustes.optimizarVideo
-            fps: ajustes.fpsVideo
-            z: root.usarA ? 1 : 0
-            pausado: root.pausado && root.usarA && !root.enTransicion
-            onListoChanged: if (listo && !root.usarA && root.pendiente) root.empezar()
-        }
-        Lienzo {
-            id: lienzoB
-            anchors.fill: parent
-            optimizar: ajustes.optimizarVideo
-            fps: ajustes.fpsVideo
-            z: root.usarA ? 0 : 1
-            pausado: root.pausado && !root.usarA && !root.enTransicion
-            onListoChanged: if (listo && root.usarA && root.pendiente) root.empezar()
-        }
+            readonly property var lienzoActual: usarA ? lienzoA : lienzoB
+            readonly property var lienzoOtro: usarA ? lienzoB : lienzoA
+            readonly property string motivoPausa: root.bloqueado ? "bloqueo"
+                : (ajustes.pausarTapado && mon.tapado) ? "tapado"
+                : (ajustes.pausarConBateria && root.conBateria) ? "bateria" : ""
+            readonly property bool pausado: mon.motivoPausa !== ""
 
-        ShaderEffectSource {
-            id: fuenteDesde
-            hideSource: root.enTransicion
-            visible: false
-        }
-        ShaderEffectSource {
-            id: fuenteHasta
-            hideSource: root.enTransicion
-            visible: false
-        }
-
-        ShaderEffect {
-            id: efecto
-            anchors.fill: parent
-            z: 2
-            visible: root.enTransicion
-            property variant desde: fuenteDesde
-            property variant hasta: fuenteHasta
-            property real progreso: 0
-            property real tipo: 1
-            property real aspecto: width / Math.max(1, height)
-            property point centro: Qt.point(0.5, 0.5)
-            fragmentShader: "transicion.frag.qsb"
-
-            NumberAnimation {
-                id: animacion
-                target: efecto
-                property: "progreso"
-                from: 0
-                to: 1
-                easing.type: Easing.InOutCubic
-                onFinished: root.terminar()
+            function poner(nueva, t, x, y) {
+                if (nueva === mon.puesta) return
+                mon.puesta = nueva
+                if (mon.primera) {
+                    mon.lienzoActual.ruta = nueva
+                    return
+                }
+                if (mon.enTransicion) animacion.complete()     // termina la anterior de golpe
+                mon.pendiente = { tipo: t, x: x, y: y }
+                mon.lienzoOtro.ruta = nueva
+                porSiAcaso.restart()
+                if (mon.lienzoOtro.listo) mon.empezar()
             }
-        }
-        }
-    }
 
-    // ===================== Capa difuminada (vista general) =====================
-    PanelWindow {
-        screen: Principal.pantalla
-        visible: Principal.lista
-        anchors {
-            top: true
-            bottom: true
-            left: true
-            right: true
-        }
-        exclusionMode: ExclusionMode.Ignore
-        WlrLayershell.layer: WlrLayer.Background
-        WlrLayershell.namespace: "fondo-difuminado"
-        color: tema.surface
-
-        // Imagen original (oculta; solo sirve de fuente para el efecto)
-        Image {
-            id: imagen
-            anchors.fill: parent
-            visible: false
-            fillMode: Image.PreserveAspectCrop
-            sourceSize.width: 640
-            // Imagen fija; si aún no existe el archivo, la ruta del fondo si es una imagen
-            source: {
-                var r = root.rutaImagen !== "" ? root.rutaImagen
-                      : (/\.(jpe?g|png|webp|bmp)$/i.test(root.ruta) ? root.ruta : "")
-                return r !== "" ? "file://" + r : ""
+            function empezar() {
+                if (!mon.pendiente) return
+                porSiAcaso.stop()
+                var p = mon.pendiente
+                mon.pendiente = null
+                efecto.tipo = root.tipos[p.tipo]
+                efecto.centro = Qt.point(p.x < 0 ? 0.5 : Math.min(1, p.x / nitida.width),
+                                         p.y < 0 ? 0.5 : Math.min(1, p.y / nitida.height))
+                fuenteDesde.sourceItem = mon.lienzoActual
+                fuenteHasta.sourceItem = mon.lienzoOtro
+                efecto.progreso = 0
+                mon.enTransicion = true
+                animacion.duration = Math.max(150, ajustes.duracion)
+                animacion.restart()
             }
-        }
 
-        // Difuminado + oscurecido
-        MultiEffect {
-            anchors.fill: parent
-            source: imagen
-            blurEnabled: true
-            blur: root.difuminado
-            blurMax: 64
-            brightness: root.oscurecer
-        }
+            function terminar() {
+                mon.usarA = !mon.usarA
+                mon.enTransicion = false
+                mon.lienzoOtro.ruta = ""          // libera el fondo viejo (y su decodificador de vídeo)
+                fuenteDesde.sourceItem = null
+                fuenteHasta.sourceItem = null
+            }
 
-        // Tinte con tu color de matugen
-        Rectangle {
-            anchors.fill: parent
-            color: tema.surface
-            opacity: root.tinte
+            function capturar(archivo) { escenaNitida.grabToImage(r => r.saveToFile(archivo), Qt.size(960, 540)) }
+
+            function estado() {
+                return {
+                    salida: mon.salida,
+                    tipo: mon.lienzoActual.tipo,
+                    video: mon.lienzoActual.rutaVideo,
+                    estadoVideo: mon.lienzoActual.estadoVideo,
+                    listo: mon.lienzoActual.listo,
+                    enTransicion: mon.enTransicion,
+                    tapado: mon.tapado,
+                    cobertura: Math.round(mon.cobertura * 100) / 100,
+                    pausado: mon.pausado && root.animado,
+                    motivoPausa: root.animado ? mon.motivoPausa : ""
+                }
+            }
+
+            // ≥ 85 % tapado en este monitor: pantalla completa, maximizada o columnas que lo llenan
+            function revisarTapado(ws, ventanas) {
+                var activos = ws.filter(w => w.is_active && w.output === mon.salida)
+                var ids = activos.map(w => w.id)
+                var W = nitida.width, H = nitida.height
+                var area = W * H
+                var vis = ventanas.filter(v => ids.indexOf(v.workspace_id) >= 0 && v.layout)
+                // Flotantes a la vista: la más grande
+                var flotante = 0
+                vis.forEach(v => {
+                    if (v.is_floating && v.layout.tile_pos_in_workspace_view !== null)
+                        flotante = Math.max(flotante, v.layout.tile_size[0] * v.layout.tile_size[1])
+                })
+                // Mosaico (niri en scroll): por columna, ancho = el de su ventana más ancha y
+                // alto = suma de sus ventanas. Si las columnas juntas llenan el ancho, niri
+                // siempre muestra la pantalla llena; si no, solo tapan lo que miden.
+                var columnas = {}
+                vis.forEach(v => {
+                    var pos = v.layout.pos_in_scrolling_layout
+                    if (v.is_floating || !pos) return
+                    var k = v.workspace_id + ":" + pos[0]
+                    var c = columnas[k] || { w: 0, h: 0 }
+                    c.w = Math.max(c.w, v.layout.tile_size[0])
+                    c.h += v.layout.tile_size[1]
+                    columnas[k] = c
+                })
+                var ancho = 0, alto = 0
+                Object.keys(columnas).forEach(k => {
+                    ancho += columnas[k].w + 16          // + hueco entre columnas
+                    alto = Math.max(alto, columnas[k].h)
+                })
+                var mosaico = Math.min(W, ancho) * Math.min(H, alto)
+                mon.cobertura = Math.min(1, Math.max(mosaico, flotante) / Math.max(1, area))
+                mon.tapado = mon.cobertura >= 0.85
+            }
+
+            // Si el fondo nuevo nunca avisa de que está listo, transiciona igual
+            Timer {
+                id: porSiAcaso
+                interval: 3000
+                onTriggered: mon.empezar()
+            }
+
+            Connections {
+                target: mon.lienzoActual
+                function onListoChanged() {
+                    if (mon.primera && mon.lienzoActual.listo) {
+                        mon.primera = false
+                        root.alPrimerFondo()
+                    }
+                }
+            }
+
+            // Un monitor recién conectado entra con el fondo que ya está puesto
+            Component.onCompleted: {
+                if (root.ruta !== "") mon.poner(root.ruta, "fundido", -1, -1)
+                if (root.animado) revisar.restart()
+            }
+
+            // ===================== Capa nítida =====================
+            PanelWindow {
+                screen: mon.modelData
+                id: nitida
+                anchors {
+                    top: true
+                    bottom: true
+                    left: true
+                    right: true
+                }
+                exclusionMode: ExclusionMode.Ignore
+                WlrLayershell.layer: WlrLayer.Background
+                WlrLayershell.namespace: "fondo-nitido"
+                color: tema.surface
+
+                Item {
+                    id: escenaNitida
+                    anchors.fill: parent
+
+                Lienzo {
+                    id: lienzoA
+                    anchors.fill: parent
+                    optimizar: ajustes.optimizarVideo
+                    fps: ajustes.fpsVideo
+                    z: mon.usarA ? 1 : 0
+                    pausado: mon.pausado && mon.usarA && !mon.enTransicion
+                    onListoChanged: if (listo && !mon.usarA && mon.pendiente) mon.empezar()
+                }
+                Lienzo {
+                    id: lienzoB
+                    anchors.fill: parent
+                    optimizar: ajustes.optimizarVideo
+                    fps: ajustes.fpsVideo
+                    z: mon.usarA ? 0 : 1
+                    pausado: mon.pausado && !mon.usarA && !mon.enTransicion
+                    onListoChanged: if (listo && mon.usarA && mon.pendiente) mon.empezar()
+                }
+
+                ShaderEffectSource {
+                    id: fuenteDesde
+                    hideSource: mon.enTransicion
+                    visible: false
+                }
+                ShaderEffectSource {
+                    id: fuenteHasta
+                    hideSource: mon.enTransicion
+                    visible: false
+                }
+
+                ShaderEffect {
+                    id: efecto
+                    anchors.fill: parent
+                    z: 2
+                    visible: mon.enTransicion
+                    property variant desde: fuenteDesde
+                    property variant hasta: fuenteHasta
+                    property real progreso: 0
+                    property real tipo: 1
+                    property real aspecto: width / Math.max(1, height)
+                    property point centro: Qt.point(0.5, 0.5)
+                    fragmentShader: "transicion.frag.qsb"
+
+                    NumberAnimation {
+                        id: animacion
+                        target: efecto
+                        property: "progreso"
+                        from: 0
+                        to: 1
+                        easing.type: Easing.InOutCubic
+                        onFinished: mon.terminar()
+                    }
+                }
+                }
+            }
+
+            // ===================== Capa difuminada (vista general) =====================
+            PanelWindow {
+                screen: mon.modelData
+                anchors {
+                    top: true
+                    bottom: true
+                    left: true
+                    right: true
+                }
+                exclusionMode: ExclusionMode.Ignore
+                WlrLayershell.layer: WlrLayer.Background
+                WlrLayershell.namespace: "fondo-difuminado"
+                color: tema.surface
+
+                // Imagen original (oculta; solo sirve de fuente para el efecto)
+                Image {
+                    id: imagen
+                    anchors.fill: parent
+                    visible: false
+                    fillMode: Image.PreserveAspectCrop
+                    sourceSize.width: 640
+                    // Imagen fija; si aún no existe el archivo, la ruta del fondo si es una imagen
+                    source: {
+                        var r = root.rutaImagen !== "" ? root.rutaImagen
+                              : (/\.(jpe?g|png|webp|bmp)$/i.test(root.ruta) ? root.ruta : "")
+                        return r !== "" ? "file://" + r : ""
+                    }
+                }
+
+                // Difuminado + oscurecido
+                MultiEffect {
+                    anchors.fill: parent
+                    source: imagen
+                    blurEnabled: true
+                    blur: root.difuminado
+                    blurMax: 64
+                    brightness: root.oscurecer
+                }
+
+                // Tinte con tu color de matugen
+                Rectangle {
+                    anchors.fill: parent
+                    color: tema.surface
+                    opacity: root.tinte
+                }
+            }
         }
     }
 }

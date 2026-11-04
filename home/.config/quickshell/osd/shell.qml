@@ -53,12 +53,18 @@ ShellRoot {
     // que saltar después. Si el dock no corre, la respuesta falla y se queda abajo.
     property bool dockVisible: false
     property bool esperandoDock: false
+    property string salida: ""            // monitor donde sale: el enfocado
     function mostrar(t) {
         root.tipo = t
         ocultar.restart()
-        if (!pDock.running) pDock.running = true
         if (!root.activo) root.esperandoDock = true
         else ocultar.restart()
+        Principal.pedirEnfocada(n => {
+            root.salida = n
+            if (pDock.running) return
+            pDock.command = ["qs", "-c", "dock", "ipc", "call", "dock", "estaVisibleEn", n]
+            pDock.running = true
+        })
     }
     function aparecer() {
         if (!root.esperandoDock) return
@@ -68,7 +74,6 @@ ShellRoot {
     }
     Process {
         id: pDock
-        command: ["qs", "-c", "dock", "ipc", "call", "dock", "estaVisible"]
         stdout: StdioCollector { id: respuestaDock; onStreamFinished: root.dockVisible = this.text.trim() === "si" }
         onExited: (codigo) => {
             root.dockVisible = codigo === 0 && respuestaDock.text.trim() === "si"
@@ -194,7 +199,7 @@ ShellRoot {
                                   || (root.tipo === "mayus" && !root.mayus)
 
     PanelWindow {
-        screen: Principal.pantalla
+        screen: Principal.porNombre(root.salida) || Principal.pantalla
         id: ventana
         anchors.bottom: true
         implicitWidth: 300

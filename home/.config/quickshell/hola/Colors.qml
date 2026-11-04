@@ -1,9 +1,9 @@
 import QtQuick
 
 QtObject {
-    property color surface: "#1f0f0c"
-    property color surfaceText: "#fddbd6"
-    property color primary: "#ffb4a8"
-    property color primaryText: "#690000"
-    property color secondary: "#ffb4a8"
+    property color surface: "#101416"
+    property color surfaceText: "#e0e3e5"
+    property color primary: "#8acff2"
+    property color primaryText: "#003547"
+    property color secondary: "#b1cad9"
 }

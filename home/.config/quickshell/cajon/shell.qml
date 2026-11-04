@@ -15,6 +15,12 @@ Scope {
     }
     property bool abierto: false
     property string filtro: ""
+    property string salida: ""        // monitor donde se abrió
+    // Se abre en el monitor enfocado. Si ese monitor cambia estando abierto, se cierra: su capa ya no existe
+    Connections {
+        target: Quickshell
+        function onScreensChanged() { if (root.abierto) root.cerrar() }
+    }
 
     // Arrastrar una app al escritorio: mantener pulsada y mover. No usa el arrastre de Wayland (el
     // escritorio está debajo de las ventanas y la app podría caer dentro de otra): el cajón sigue el
@@ -63,12 +69,19 @@ Scope {
         target: "cajon"
         function toggle(): void {
             if (root.abierto) root.cerrar()
-            else root.abrir()
+            else Principal.pedirEnfocada(n => root.abrir(n))
+        }
+        // Desde el dock: en el monitor del dock que recibió el clic
+        function toggleEn(salida: string): void {
+            if (root.abierto) root.cerrar()
+            else root.abrir(salida)
         }
     }
 
-    function abrir() {
+    function abrir(salida) {
+        if (root.abierto) return
         esconder.stop()
+        root.salida = salida
         buscador.text = ""
         ventana.visible = true
         root.abierto = true
@@ -101,7 +114,7 @@ Scope {
     }
 
     PanelWindow {
-        screen: Principal.pantalla
+        screen: Principal.porNombre(root.salida) || Principal.pantalla
         id: ventana
         visible: false
         anchors {
@@ -287,6 +300,8 @@ Scope {
                         }
                         onPressAndHold: mouse => {
                             if (mouse.button !== Qt.LeftButton) return
+                            // Los widgets e iconos solo están en el monitor principal: desde otro no hay dónde soltarla
+                            if (ventana.screen !== Principal.pantalla) return
                             var p = zona.mapToItem(null, mouse.x, mouse.y)
                             root.empezarArrastre(celda.modelData, p.x, p.y)
                         }

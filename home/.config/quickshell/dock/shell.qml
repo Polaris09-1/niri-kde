@@ -14,7 +14,6 @@ Scope {
         target: Quickshell
         function onReloadCompleted() { Quickshell.inhibitReloadPopup() }
     }
-    property bool mostrar: false
 
     // ===== Ajustes (cámbialos a tu gusto) =====
     property int base: 26          // tamaño del icono en reposo (px)
@@ -173,20 +172,8 @@ Scope {
         Quickshell.execDetached(["qs", "-c", "hola", "ipc", "call", "hola", "pagina", p])
     }
 
-    // ===== Menú de clic derecho =====
-    property var menu: null           // elemento del dock con el menú abierto
-    property real menuX: 0            // centro del icono (coords. de "area")
-    property string confirmarCierre: ""
 
-    function abrirMenu(d, item) {
-        var pt = item.mapToItem(area, item.width / 2, 0)
-        root.menuX = pt.x
-        root.confirmarCierre = ""
-        root.menu = d
-    }
-
-    function cerrarMenu() { root.menu = null }
-
+    // El menú y la ola son de cada monitor (los lleva "mon"); la lista de apps es la misma en todos
     function opcionesMenu(d) {
         if (!d) return []
         var o = []
@@ -199,27 +186,31 @@ Scope {
         return o
     }
 
-    function elegirOpcion(d, id) {
-        if (id === "nueva") { root.lanzar(d.entrada); root.cerrarMenu() }
+    function elegirOpcion(d, id, mon) {
+        if (id === "nueva") { root.lanzar(d.entrada); mon.cerrarMenu() }
         else if (id === "cerrar") {
             // Varias ventanas: pide confirmación antes de cerrarlas todas
-            if (d.ventanas.length > 1 && root.confirmarCierre !== d.clave) { root.confirmarCierre = d.clave; return }
+            if (d.ventanas.length > 1 && mon.confirmarCierre !== d.clave) { mon.confirmarCierre = d.clave; return }
             d.ventanas.forEach(id => Quickshell.execDetached(["niri", "msg", "action", "close-window", "--id", String(id)]))
-            root.cerrarMenu()
+            mon.cerrarMenu()
         }
         else if (id === "desfijar") {
             var quitar = d.especial ? d.clave : d.name
             guardado.fijadas = guardado.fijadas.filter(n => n !== quitar)
-            root.cerrarMenu()
+            mon.cerrarMenu()
         }
         else if (id === "fijar") {
             if (guardado.fijadas.indexOf(d.name) < 0) guardado.fijadas = guardado.fijadas.concat([d.name])
-            root.cerrarMenu()
+            mon.cerrarMenu()
         }
     }
 
-    function activar(d) {
-        if (d.cajon) { abrirCajon.running = true; return "cajón" }
+    // salida: monitor del dock que recibió el clic ("" = el enfocado). El cajón se abre ahí
+    function activar(d, salida) {
+        if (d.cajon) {
+            Quickshell.execDetached(["qs", "-c", "cajon", "ipc", "call", "cajon"].concat(salida ? ["toggleEn", salida] : ["toggle"]))
+            return "cajón"
+        }
         if (d.especial) { root.abrirPagina(d.especial); return "panel " + d.especial }
         if (d.ventanas.length === 0) { root.lanzar(d.entrada); return "abrir " + d.name }
         var actual = root.ventanas.find(v => v.is_focused)
@@ -229,386 +220,434 @@ Scope {
         return "enfocar ventana " + id
     }
 
+    function monitorDe(nombre) {
+        var l = pantallas.instances
+        for (var i = 0; i < l.length; i++) if (l[i].salida === nombre) return l[i]
+        return null
+    }
+    function monitorPrincipal() {
+        return root.monitorDe(Principal.pantalla ? Principal.pantalla.name : "") || pantallas.instances[0] || null
+    }
+
     // ===== IPC: qs -c dock ipc call dock <función> =====
     IpcHandler {
         target: "dock"
-        function mostrar(): void { root.abrir(); pruebaOcultar.restart() }
+        function mostrar(): void { Principal.pedirEnfocada(n => { var m = root.monitorDe(n) || root.monitorPrincipal(); if (m) m.mostrarUnRato() }) }
         // Para el OSD (2026-11-01): si el dock está a la vista, el OSD sube para no taparlo
-        function estaVisible(): string { return root.mostrar ? "si" : "no" }
+        function estaVisible(): string {
+            var l = pantallas.instances
+            for (var i = 0; i < l.length; i++) if (l[i].mostrar) return "si"
+            return "no"
+        }
+        function estaVisibleEn(salida: string): string {
+            var m = root.monitorDe(salida)
+            return m && m.mostrar ? "si" : "no"
+        }
         function info(): string {
             return JSON.stringify(root.elementos.map(d => ({ nombre: d.name, ventanas: d.ventanas.length, enfocada: d.enfocada })))
         }
+        function monitores(): string {
+            var r = []
+            var l = pantallas.instances
+            for (var i = 0; i < l.length; i++) r.push({ salida: l[i].salida, mostrar: l[i].mostrar, menu: l[i].menu ? l[i].menu.name : "" })
+            return JSON.stringify(r)
+        }
         function clic(nombre: string): string {
             var d = root.elementos.find(x => x.name === nombre)
-            return d ? root.activar(d) : "no está en el dock"
+            return d ? root.activar(d, "") : "no está en el dock"
         }
-        // Prueba del menú: abre el de una app (centrado) y devuelve sus opciones
+        // Prueba del menú: abre el de una app (centrado) en el monitor principal y devuelve sus opciones
         function menu(nombre: string): string {
             var d = root.elementos.find(x => x.name === nombre)
-            if (!d) return "no está en el dock"
-            root.abrir()
-            pruebaOcultar.restart()
-            var i = root.elementos.indexOf(d)
-            root.menuX = (area.width - root.anchoReposo) / 2 + i * (root.base + root.separacion) + root.base / 2
-            root.menu = d
+            var m = root.monitorPrincipal()
+            if (!d || !m) return "no está en el dock"
+            m.menuDePrueba(d)
             return root.opcionesMenu(d).map(o => o.texto).join(", ")
         }
         function opcion(nombre: string, id: string): string {
             var d = root.elementos.find(x => x.name === nombre)
-            if (!d) return "no está en el dock"
-            root.elegirOpcion(d, id)
+            var m = root.monitorPrincipal()
+            if (!d || !m) return "no está en el dock"
+            root.elegirOpcion(d, id, m)
             return JSON.stringify(guardado.fijadas)
         }
-    }
-
-    Timer {
-        id: pruebaOcultar
-        interval: 3000
-        onTriggered: ocultar.restart()
     }
 
     // Ancho del dock en reposo
     property real anchoReposo: elementos.length * base + (elementos.length - 1) * separacion
 
-    // Posición X del mouse sobre el dock (-1000 = fuera)
-    property real ratonX: (hh.hovered && hh.point.position.y > area.height - 80) ? hh.point.position.x : -1000
-
-    // Tamaño de cada icono según su distancia al mouse (curva de campana)
-    function zoomPara(i) {
-        var centro = (area.width - root.anchoReposo) / 2 + i * (root.base + root.separacion) + root.base / 2
-        var d = root.ratonX - centro
-        return 1 + root.aumento * Math.exp(-(d * d) / (2 * root.alcance * root.alcance))
-    }
-
     Colors { id: tema }
 
-    Process {
-        id: abrirCajon
-        command: ["qs", "-c", "cajon", "ipc", "call", "cajon", "toggle"]
-    }
+    // ===== Un dock completo por monitor =====
+    Variants {
+        id: pantallas
+        model: Quickshell.screens
+        delegate: Scope {
+            id: mon
+            required property var modelData
+            readonly property string salida: modelData.name
+            property bool mostrar: false
 
-    function abrir() {
-        ocultar.stop()
-        esconder.stop()
-        ventana.visible = true
-        root.mostrar = true
-    }
-
-    // Espera un poco antes de esconder
-    Timer {
-        id: ocultar
-        interval: 400
-        onTriggered: {
-            root.cerrarMenu()
-            root.mostrar = false
-            esconder.restart()
-        }
-    }
-
-    // Oculta la ventana cuando termina la animación de bajada
-    Timer {
-        id: esconder
-        interval: 350
-        onTriggered: ventana.visible = false
-    }
-
-    // Oscurece el resto de la pantalla (no bloquea clics)
-    PanelWindow {
-        screen: Principal.pantalla
-        visible: Principal.lista
-        anchors { top: true; bottom: true; left: true; right: true }
-        exclusionMode: ExclusionMode.Ignore
-        color: "transparent"
-        mask: Region {}
-        WlrLayershell.layer: WlrLayer.Top
-        Rectangle {
-            anchors.fill: parent
-            color: "black"
-            opacity: root.mostrar ? 0.35 : 0
-            Behavior on opacity { NumberAnimation { duration: 300 } }
-        }
-    }
-
-    // Sensor invisible en el borde inferior
-    PanelWindow {
-        screen: Principal.pantalla
-        visible: Principal.lista
-        anchors {
-            bottom: true
-            left: true
-            right: true
-        }
-        implicitHeight: 4
-        exclusionMode: ExclusionMode.Ignore
-        exclusiveZone: 0
-        color: "transparent"
-        WlrLayershell.layer: WlrLayer.Overlay
-
-        MouseArea {
-            anchors.fill: parent
-            hoverEnabled: true
-            onEntered: root.abrir()
-            onExited: ocultar.restart()
-        }
-    }
-
-    // El dock
-    PanelWindow {
-        screen: Principal.pantalla
-        id: ventana
-        visible: false
-        anchors.bottom: true
-        implicitWidth: root.anchoReposo + 400
-        // Más alto mientras el menú está abierto, para que quepa sobre el icono
-        implicitHeight: root.menu ? 300 : 140
-        exclusiveZone: 0
-        color: "transparent"
-        WlrLayershell.layer: WlrLayer.Overlay
-
-        Item {
-            id: area
-            anchors.fill: parent
-
-            HoverHandler {
-                id: hh
-                onHoveredChanged: hovered ? root.abrir() : ocultar.restart()
+            function mostrarUnRato() { mon.abrir(); pruebaOcultar.restart() }
+            function menuDePrueba(d) {
+                mon.mostrarUnRato()
+                var i = root.elementos.indexOf(d)
+                mon.menuX = (area.width - root.anchoReposo) / 2 + i * (root.base + root.separacion) + root.base / 2
+                mon.menu = d
             }
 
-            // Todo lo que sube y baja con rebote
-            Item {
-                anchors.fill: parent
-                opacity: root.mostrar ? 1 : 0
-                Behavior on opacity {
-                    NumberAnimation { duration: 250 }
-                }
-                transform: Translate {
-                    y: root.mostrar ? 0 : 100
-                    Behavior on y {
-                        NumberAnimation { duration: 400; easing.type: Easing.OutBack }
-                    }
-                }
+            // ===== Menú de clic derecho =====
+            property var menu: null           // elemento del dock con el menú abierto
+            property real menuX: 0            // centro del icono (coords. de "area")
+            property string confirmarCierre: ""
 
-                // Clic en una zona vacía del dock: cierra el menú
+            function abrirMenu(d, item) {
+                var pt = item.mapToItem(area, item.width / 2, 0)
+                mon.menuX = pt.x
+                mon.confirmarCierre = ""
+                mon.menu = d
+            }
+
+            function cerrarMenu() { mon.menu = null }
+
+            Timer {
+                id: pruebaOcultar
+                interval: 3000
+                onTriggered: ocultar.restart()
+            }
+
+            // Posición X del mouse sobre el dock (-1000 = fuera)
+            property real ratonX: (hh.hovered && hh.point.position.y > area.height - 80) ? hh.point.position.x : -1000
+
+            // Tamaño de cada icono según su distancia al mouse (curva de campana)
+            function zoomPara(i) {
+                var centro = (area.width - root.anchoReposo) / 2 + i * (root.base + root.separacion) + root.base / 2
+                var d = mon.ratonX - centro
+                return 1 + root.aumento * Math.exp(-(d * d) / (2 * root.alcance * root.alcance))
+            }
+
+            function abrir() {
+                ocultar.stop()
+                esconder.stop()
+                ventana.visible = true
+                mon.mostrar = true
+            }
+
+            // Espera un poco antes de esconder
+            Timer {
+                id: ocultar
+                interval: 400
+                onTriggered: {
+                    mon.cerrarMenu()
+                    mon.mostrar = false
+                    esconder.restart()
+                }
+            }
+
+            // Oculta la ventana cuando termina la animación de bajada
+            Timer {
+                id: esconder
+                interval: 350
+                onTriggered: ventana.visible = false
+            }
+
+            // Oscurece el resto de la pantalla (no bloquea clics)
+            PanelWindow {
+                screen: mon.modelData
+                anchors { top: true; bottom: true; left: true; right: true }
+                exclusionMode: ExclusionMode.Ignore
+                color: "transparent"
+                mask: Region {}
+                WlrLayershell.layer: WlrLayer.Top
+                Rectangle {
+                    anchors.fill: parent
+                    color: "black"
+                    opacity: mon.mostrar ? 0.35 : 0
+                    Behavior on opacity { NumberAnimation { duration: 300 } }
+                }
+            }
+
+            // Sensor invisible en el borde inferior
+            PanelWindow {
+                screen: mon.modelData
+                anchors {
+                    bottom: true
+                    left: true
+                    right: true
+                }
+                implicitHeight: 4
+                exclusionMode: ExclusionMode.Ignore
+                exclusiveZone: 0
+                color: "transparent"
+                WlrLayershell.layer: WlrLayer.Overlay
+
                 MouseArea {
                     anchors.fill: parent
-                    z: -1
-                    acceptedButtons: Qt.LeftButton | Qt.RightButton
-                    onClicked: root.cerrarMenu()
+                    hoverEnabled: true
+                    onEntered: mon.abrir()
+                    onExited: ocultar.restart()
                 }
+            }
 
-                // ---------- Menú de clic derecho (crece desde el icono) ----------
-                Rectangle {
-                    id: menuCaja
-                    z: 10
-                    property var d: null
-                    property var ops: root.opcionesMenu(menuCaja.d)
-                    property real escala: root.menu ? 1 : 0
-                    Behavior on escala {
-                        NumberAnimation { duration: root.menu ? 320 : 160; easing.type: root.menu ? Easing.OutBack : Easing.InCubic }
+            // El dock
+            PanelWindow {
+                screen: mon.modelData
+                id: ventana
+                visible: false
+                anchors.bottom: true
+                implicitWidth: root.anchoReposo + 400
+                // Más alto mientras el menú está abierto, para que quepa sobre el icono
+                implicitHeight: mon.menu ? 300 : 140
+                exclusiveZone: 0
+                color: "transparent"
+                WlrLayershell.layer: WlrLayer.Overlay
+
+                Item {
+                    id: area
+                    anchors.fill: parent
+
+                    HoverHandler {
+                        id: hh
+                        onHoveredChanged: hovered ? mon.abrir() : ocultar.restart()
                     }
-                    Connections {
-                        target: root
-                        function onMenuChanged() { if (root.menu) menuCaja.d = root.menu }
-                    }
 
-                    visible: escala > 0.01
-                    scale: escala
-                    opacity: Math.min(1, escala)
-                    transformOrigin: Item.Bottom
-                    width: 210
-                    height: colMenu.implicitHeight + 16
-                    x: Math.max(8, Math.min(parent.width - width - 8, root.menuX - width / 2))
-                    y: fondo.y - height - 26
-                    radius: 16
-                    color: Qt.rgba(tema.surface.r, tema.surface.g, tema.surface.b, 0.96)
-                    border.color: Qt.rgba(tema.primary.r, tema.primary.g, tema.primary.b, 0.6)
-                    border.width: 1.5
-
-                    Column {
-                        id: colMenu
-                        x: 8
-                        y: 8
-                        width: parent.width - 16
-                        spacing: 2
-
-                        Text {
-                            width: parent.width
-                            leftPadding: 8
-                            bottomPadding: 4
-                            elide: Text.ElideRight
-                            text: menuCaja.d ? menuCaja.d.name : ""
-                            font.family: "JetBrainsMono Nerd Font"
-                            font.pixelSize: 11
-                            font.bold: true
-                            color: Qt.rgba(tema.primary.r, tema.primary.g, tema.primary.b, 0.85)
+                    // Todo lo que sube y baja con rebote
+                    Item {
+                        anchors.fill: parent
+                        opacity: mon.mostrar ? 1 : 0
+                        Behavior on opacity {
+                            NumberAnimation { duration: 250 }
                         }
-
-                        Repeater {
-                            model: menuCaja.ops
-                            delegate: Rectangle {
-                                id: op
-                                required property var modelData
-                                property bool confirmando: op.modelData.id === "cerrar" && menuCaja.d && root.confirmarCierre === menuCaja.d.clave
-                                width: colMenu.width
-                                height: 34
-                                radius: 10
-                                color: op.confirmando ? Qt.rgba(1, 0.33, 0.33, 0.25)
-                                    : Qt.rgba(tema.primary.r, tema.primary.g, tema.primary.b, maOp.containsMouse ? 0.18 : 0)
-                                Behavior on color {
-                                    ColorAnimation { duration: 120 }
-                                }
-                                Row {
-                                    x: 10
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    spacing: 10
-                                    Text {
-                                        text: String.fromCodePoint(op.modelData.icono)
-                                        font.family: "JetBrainsMono Nerd Font"
-                                        font.pixelSize: 14
-                                        color: op.modelData.peligro ? "#ff8a80" : tema.primary
-                                    }
-                                    Text {
-                                        text: op.confirmando ? "¿Seguro? Toca otra vez" : op.modelData.texto
-                                        font.family: "JetBrainsMono Nerd Font"
-                                        font.pixelSize: 12
-                                        color: tema.surfaceText
-                                    }
-                                }
-                                MouseArea {
-                                    id: maOp
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: root.elegirOpcion(menuCaja.d, op.modelData.id)
-                                }
+                        transform: Translate {
+                            y: mon.mostrar ? 0 : 100
+                            Behavior on y {
+                                NumberAnimation { duration: 400; easing.type: Easing.OutBack }
                             }
                         }
-                    }
-                }
 
-                // Fondo que se estira con la ola
-                Rectangle {
-                    id: fondo
-                    anchors.bottom: parent.bottom
-                    anchors.bottomMargin: 10
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width: fila.width + 20
-                    height: root.base + 16
-                    radius: 16
-                    color: Qt.rgba(tema.surface.r, tema.surface.g, tema.surface.b, 0.85)
-                    border.color: tema.primary
-                    border.width: 1.5
-                }
+                        // Clic en una zona vacía del dock: cierra el menú
+                        MouseArea {
+                            anchors.fill: parent
+                            z: -1
+                            acceptedButtons: Qt.LeftButton | Qt.RightButton
+                            onClicked: mon.cerrarMenu()
+                        }
 
-                Row {
-                    id: fila
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.bottom: fondo.bottom
-                    anchors.bottomMargin: 8
-                    spacing: root.separacion
-
-                    Repeater {
-                        model: root.elementos
-
-                        delegate: Item {
-                            id: ic
-                            required property var modelData
-                            required property int index
-
-                            property real zoom: root.zoomPara(ic.index)
-                            property real cerca: (zoom - 1) / root.aumento   // 0 = lejos, 1 = encima
-
-                            width: root.base * zoom
-                            height: root.base * (1 + root.aumento)
-
-                            Image {
-                                id: img
-                                anchors.bottom: parent.bottom
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                width: parent.width
-                                height: parent.width
-                                sourceSize.width: 128
-                                sourceSize.height: 128
-                                source: Quickshell.iconPath(ic.modelData.icon, "application-x-executable")
-                                transform: Translate { id: salto }
-
-                                // Teñido con tu color; se quita y brilla al acercarte
-                                layer.enabled: true
-                                layer.effect: MultiEffect {
-                                    colorization: 0.8 * (1 - ic.cerca)
-                                    colorizationColor: tema.primary
-                                    shadowEnabled: true
-                                    shadowColor: tema.primary
-                                    shadowBlur: 1.0
-                                    shadowOpacity: 0.9 * ic.cerca
-                                }
+                        // ---------- Menú de clic derecho (crece desde el icono) ----------
+                        Rectangle {
+                            id: menuCaja
+                            z: 10
+                            property var d: null
+                            property var ops: root.opcionesMenu(menuCaja.d)
+                            property real escala: mon.menu ? 1 : 0
+                            Behavior on escala {
+                                NumberAnimation { duration: mon.menu ? 320 : 160; easing.type: mon.menu ? Easing.OutBack : Easing.InCubic }
+                            }
+                            Connections {
+                                target: mon
+                                function onMenuChanged() { if (mon.menu) menuCaja.d = mon.menu }
                             }
 
-                            // Etiqueta flotante con el nombre
-                            Rectangle {
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                anchors.bottom: img.top
-                                anchors.bottomMargin: 8
-                                width: etiqueta.width + 18
-                                height: 24
-                                radius: 12
-                                color: tema.primary
-                                opacity: ic.cerca > 0.9 && !root.menu ? 1 : 0
-                                Behavior on opacity {
-                                    NumberAnimation { duration: 150 }
-                                }
+                            visible: escala > 0.01
+                            scale: escala
+                            opacity: Math.min(1, escala)
+                            transformOrigin: Item.Bottom
+                            width: 210
+                            height: colMenu.implicitHeight + 16
+                            x: Math.max(8, Math.min(parent.width - width - 8, mon.menuX - width / 2))
+                            y: fondo.y - height - 26
+                            radius: 16
+                            color: Qt.rgba(tema.surface.r, tema.surface.g, tema.surface.b, 0.96)
+                            border.color: Qt.rgba(tema.primary.r, tema.primary.g, tema.primary.b, 0.6)
+                            border.width: 1.5
+
+                            Column {
+                                id: colMenu
+                                x: 8
+                                y: 8
+                                width: parent.width - 16
+                                spacing: 2
 
                                 Text {
-                                    id: etiqueta
-                                    anchors.centerIn: parent
-                                    width: Math.min(implicitWidth, 240)
+                                    width: parent.width
+                                    leftPadding: 8
+                                    bottomPadding: 4
                                     elide: Text.ElideRight
-                                    text: ic.modelData.name
-                                    color: tema.primaryText
+                                    text: menuCaja.d ? menuCaja.d.name : ""
+                                    font.family: "JetBrainsMono Nerd Font"
                                     font.pixelSize: 11
                                     font.bold: true
+                                    color: Qt.rgba(tema.primary.r, tema.primary.g, tema.primary.b, 0.85)
                                 }
-                            }
 
-                            // Puntito: app abierta (largo si tiene el foco)
-                            Rectangle {
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                anchors.top: parent.bottom
-                                anchors.topMargin: 2
-                                visible: ic.modelData.ventanas.length > 0
-                                width: ic.modelData.enfocada ? 14 : 5
-                                height: 5
-                                radius: 2.5
-                                color: tema.primary
-                                opacity: ic.modelData.enfocada ? 1 : 0.6
-                                Behavior on width {
-                                    NumberAnimation { duration: 250; easing.type: Easing.OutBack }
-                                }
-                            }
-
-                            // Izquierdo: enfocar/abrir · Medio: nueva ventana · Derecho: menú
-                            MouseArea {
-                                anchors.fill: img
-                                acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: m => {
-                                    if (m.button === Qt.RightButton) {
-                                        if (root.menu && root.menu.clave === ic.modelData.clave) root.cerrarMenu()
-                                        else root.abrirMenu(ic.modelData, img)
-                                        return
+                                Repeater {
+                                    model: menuCaja.ops
+                                    delegate: Rectangle {
+                                        id: op
+                                        required property var modelData
+                                        property bool confirmando: op.modelData.id === "cerrar" && menuCaja.d && mon.confirmarCierre === menuCaja.d.clave
+                                        width: colMenu.width
+                                        height: 34
+                                        radius: 10
+                                        color: op.confirmando ? Qt.rgba(1, 0.33, 0.33, 0.25)
+                                            : Qt.rgba(tema.primary.r, tema.primary.g, tema.primary.b, maOp.containsMouse ? 0.18 : 0)
+                                        Behavior on color {
+                                            ColorAnimation { duration: 120 }
+                                        }
+                                        Row {
+                                            x: 10
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            spacing: 10
+                                            Text {
+                                                text: String.fromCodePoint(op.modelData.icono)
+                                                font.family: "JetBrainsMono Nerd Font"
+                                                font.pixelSize: 14
+                                                color: op.modelData.peligro ? "#ff8a80" : tema.primary
+                                            }
+                                            Text {
+                                                text: op.confirmando ? "¿Seguro? Toca otra vez" : op.modelData.texto
+                                                font.family: "JetBrainsMono Nerd Font"
+                                                font.pixelSize: 12
+                                                color: tema.surfaceText
+                                            }
+                                        }
+                                        MouseArea {
+                                            id: maOp
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: root.elegirOpcion(menuCaja.d, op.modelData.id, mon)
+                                        }
                                     }
-                                    root.cerrarMenu()
-                                    rebote.start()
-                                    if (m.button === Qt.MiddleButton && ic.modelData.entrada) root.lanzar(ic.modelData.entrada)
-                                    else root.activar(ic.modelData)
                                 }
                             }
+                        }
 
-                            // Rebote al hacer clic
-                            SequentialAnimation {
-                                id: rebote
-                                NumberAnimation { target: salto; property: "y"; to: -16; duration: 150; easing.type: Easing.OutQuad }
-                                NumberAnimation { target: salto; property: "y"; to: 0; duration: 400; easing.type: Easing.OutBounce }
+                        // Fondo que se estira con la ola
+                        Rectangle {
+                            id: fondo
+                            anchors.bottom: parent.bottom
+                            anchors.bottomMargin: 10
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: fila.width + 20
+                            height: root.base + 16
+                            radius: 16
+                            color: Qt.rgba(tema.surface.r, tema.surface.g, tema.surface.b, 0.85)
+                            border.color: tema.primary
+                            border.width: 1.5
+                        }
+
+                        Row {
+                            id: fila
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.bottom: fondo.bottom
+                            anchors.bottomMargin: 8
+                            spacing: root.separacion
+
+                            Repeater {
+                                model: root.elementos
+
+                                delegate: Item {
+                                    id: ic
+                                    required property var modelData
+                                    required property int index
+
+                                    property real zoom: mon.zoomPara(ic.index)
+                                    property real cerca: (zoom - 1) / root.aumento   // 0 = lejos, 1 = encima
+
+                                    width: root.base * zoom
+                                    height: root.base * (1 + root.aumento)
+
+                                    Image {
+                                        id: img
+                                        anchors.bottom: parent.bottom
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        width: parent.width
+                                        height: parent.width
+                                        sourceSize.width: 128
+                                        sourceSize.height: 128
+                                        source: Quickshell.iconPath(ic.modelData.icon, "application-x-executable")
+                                        transform: Translate { id: salto }
+
+                                        // Teñido con tu color; se quita y brilla al acercarte
+                                        layer.enabled: true
+                                        layer.effect: MultiEffect {
+                                            colorization: 0.8 * (1 - ic.cerca)
+                                            colorizationColor: tema.primary
+                                            shadowEnabled: true
+                                            shadowColor: tema.primary
+                                            shadowBlur: 1.0
+                                            shadowOpacity: 0.9 * ic.cerca
+                                        }
+                                    }
+
+                                    // Etiqueta flotante con el nombre
+                                    Rectangle {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        anchors.bottom: img.top
+                                        anchors.bottomMargin: 8
+                                        width: etiqueta.width + 18
+                                        height: 24
+                                        radius: 12
+                                        color: tema.primary
+                                        opacity: ic.cerca > 0.9 && !mon.menu ? 1 : 0
+                                        Behavior on opacity {
+                                            NumberAnimation { duration: 150 }
+                                        }
+
+                                        Text {
+                                            id: etiqueta
+                                            anchors.centerIn: parent
+                                            width: Math.min(implicitWidth, 240)
+                                            elide: Text.ElideRight
+                                            text: ic.modelData.name
+                                            color: tema.primaryText
+                                            font.pixelSize: 11
+                                            font.bold: true
+                                        }
+                                    }
+
+                                    // Puntito: app abierta (largo si tiene el foco)
+                                    Rectangle {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        anchors.top: parent.bottom
+                                        anchors.topMargin: 2
+                                        visible: ic.modelData.ventanas.length > 0
+                                        width: ic.modelData.enfocada ? 14 : 5
+                                        height: 5
+                                        radius: 2.5
+                                        color: tema.primary
+                                        opacity: ic.modelData.enfocada ? 1 : 0.6
+                                        Behavior on width {
+                                            NumberAnimation { duration: 250; easing.type: Easing.OutBack }
+                                        }
+                                    }
+
+                                    // Izquierdo: enfocar/abrir · Medio: nueva ventana · Derecho: menú
+                                    MouseArea {
+                                        anchors.fill: img
+                                        acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: m => {
+                                            if (m.button === Qt.RightButton) {
+                                                if (mon.menu && mon.menu.clave === ic.modelData.clave) mon.cerrarMenu()
+                                                else mon.abrirMenu(ic.modelData, img)
+                                                return
+                                            }
+                                            mon.cerrarMenu()
+                                            rebote.start()
+                                            if (m.button === Qt.MiddleButton && ic.modelData.entrada) root.lanzar(ic.modelData.entrada)
+                                            else root.activar(ic.modelData, mon.salida)
+                                        }
+                                    }
+
+                                    // Rebote al hacer clic
+                                    SequentialAnimation {
+                                        id: rebote
+                                        NumberAnimation { target: salto; property: "y"; to: -16; duration: 150; easing.type: Easing.OutQuad }
+                                        NumberAnimation { target: salto; property: "y"; to: 0; duration: 400; easing.type: Easing.OutBounce }
+                                    }
+                                }
                             }
                         }
                     }

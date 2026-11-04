@@ -122,7 +122,7 @@ Scope {
         target: "galeria"
         function toggle(): void {
             if (root.abierto) root.cerrar()
-            else root.abrir()
+            else Principal.pedirEnfocada(n => { root.salida = n; root.abrir() })
         }
         // Para probar: aplica la tarjeta i como si se hiciera clic en (x, y)
         function aplicar(i: int, x: int, y: int): void {
@@ -159,6 +159,12 @@ Scope {
             l.sort((a, b) => a.d - b.d)
             return JSON.stringify(l)
         }
+    }
+
+    property string salida: ""        // monitor donde se abrió (el enfocado)
+    Connections {
+        target: Quickshell
+        function onScreensChanged() { if (root.abierto) root.cerrar() }
     }
 
     function abrir() {
@@ -324,7 +330,7 @@ Scope {
 
     // ===================================================================
     PanelWindow {
-        screen: Principal.pantalla
+        screen: Principal.porNombre(root.salida) || Principal.pantalla
         id: ventana
         visible: false
         anchors {
@@ -882,6 +888,8 @@ Scope {
                 // ----- Ayudas de teclado -----
                 Row {
                     id: ayudas
+                    // En un monitor estrecho no caben entre los chips: se ocultan (con opacity, para no perder su medida)
+                    opacity: ventana.width / 2 - ayudas.width / 2 >= 52 + Math.max(filaTransicion.width, filaDuracion.width) ? 1 : 0
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: 34
                     anchors.horizontalCenter: parent.horizontalCenter

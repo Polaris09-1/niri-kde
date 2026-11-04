@@ -9,6 +9,9 @@ import Quickshell.Io
 // Además `visible: Principal.lista && …`: el enlace solo no basta. Al cambiar las pantallas, `lista` baja un instante
 // y la capa se recrea sin perder el contenido de la ventana. Probado apagando y encendiendo una salida 5 veces seguidas.
 // Orden: el monitor principal de Ajustes, la pantalla del portátil, la primera encendida.
+// Lo que se abre "donde estás" (cajón, portapapeles, galería, OSD) pregunta con pedirEnfocada() y usa
+// `screen: Principal.porNombre(salida) || Principal.pantalla`. Lo que va en todos los monitores (fondo, dock) usa
+// Variants con Quickshell.screens: no necesita `lista`, porque cada pantalla crea y destruye sus propias ventanas.
 // Enlace simbólico en cada módulo, como Colors.qml.
 Singleton {
     id: p
@@ -39,5 +42,27 @@ Singleton {
     readonly property var pantalla: {
         var l = Quickshell.screens
         return l.find(s => p.coincide(s)) || l.find(s => /^eDP/.test(s.name)) || l[0] || null
+    }
+
+    function porNombre(nombre) { return Quickshell.screens.find(s => s.name === nombre) || null }
+
+    // Pregunta a niri por el monitor enfocado y llama a alResponder(nombre); "" si no lo sabe
+    property var pendientes: []
+    function pedirEnfocada(alResponder) {
+        p.pendientes = p.pendientes.concat([alResponder])
+        if (!pEnfocada.running) pEnfocada.running = true
+    }
+    Process {
+        id: pEnfocada
+        command: ["niri", "msg", "-j", "focused-output"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var nombre = ""
+                try { nombre = JSON.parse(text).name || "" } catch (e) {}
+                var l = p.pendientes
+                p.pendientes = []
+                l.forEach(f => f(nombre))
+            }
+        }
     }
 }

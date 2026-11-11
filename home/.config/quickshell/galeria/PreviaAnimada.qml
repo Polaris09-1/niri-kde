@@ -32,8 +32,16 @@ Item {
     }
 
     // Cada cambio detiene lo anterior y espera a que la selección se asiente (no decodifica
-    // nada mientras recorres el carrusel deprisa)
-    onRutaChanged: { pa.detener(); if (pa.ruta !== "") espera.restart(); else espera.stop() }
+    // nada mientras recorres el carrusel deprisa). La primera vez (al abrir) no hay nada que
+    // asentar: empieza en la siguiente vuelta del bucle de eventos.
+    property bool primera: true
+    onRutaChanged: {
+        pa.detener()
+        if (pa.ruta === "") { espera.stop(); return }
+        espera.interval = pa.primera ? 0 : 250
+        pa.primera = false
+        espera.restart()
+    }
 
     Timer {
         id: espera
@@ -88,17 +96,7 @@ Item {
         loops: MediaPlayer.Infinite
         videoOutput: salida
         // Sin audioOutput: nunca suena
-        onMediaStatusChanged: {
-            if (mediaStatus === MediaPlayer.BufferedMedia || mediaStatus === MediaPlayer.BufferingMedia)
-                primerFotograma.restart()
-        }
         onErrorOccurred: (codigo, texto) => console.warn("galeria: error de vídeo:", texto)
-    }
-    // Da tiempo a que llegue el primer fotograma antes de mostrarlo (sin parpadeo negro)
-    Timer {
-        id: primerFotograma
-        interval: 120
-        onTriggered: if (pa.reproduciendo !== "") pa.listo = true
     }
 
     VideoOutput {
@@ -106,6 +104,15 @@ Item {
         anchors.fill: parent
         visible: !pa.esGif
         fillMode: VideoOutput.PreserveAspectCrop
+        // Se muestra al llegar el primer fotograma de verdad (sin parpadeo negro y sin esperar de más)
+        Connections {
+            target: salida.videoSink
+            function onVideoFrameChanged() {
+                if (!pa.listo && !pa.esGif && pa.reproduciendo !== ""
+                    && reproductor.playbackState === MediaPlayer.PlayingState)
+                    pa.listo = true
+            }
+        }
     }
 
     AnimatedImage {

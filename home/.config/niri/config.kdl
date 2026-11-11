@@ -711,8 +711,6 @@ spawn-at-startup "quickshell" "-c" "permisos"
 // swayidle solo para bloquear ANTES de suspender (tapa / systemctl suspend) y con "loginctl lock-session";
 // los tiempos de inactividad los lleva el módulo "bloqueo"
 spawn-at-startup "swayidle" "-w" "before-sleep" "@HOME@/.local/bin/bloquear.sh" "lock" "@HOME@/.local/bin/bloquear.sh"
-//Jarvis personal 
-spawn-at-startup "alacritty" "--title" "JARVIS" "-e" "@HOME@/jarvis/.venv/bin/python" "@HOME@/jarvis/jarvis.py"
 
 // Barra de tareas: vidrio difuminado, esquinas redondeadas y sombra
 layer-rule {
@@ -737,4 +735,6 @@ window-rule {
     default-column-width { fixed 1040; }
     default-window-height { fixed 700; }
 }
+// Extras locales y privados (opcional): si no existe el archivo, niri lo ignora. No se sube al repositorio.
+include optional=true "extras.kdl"
 include optional=true "ajustes.kdl"

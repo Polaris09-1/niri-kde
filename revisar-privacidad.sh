@@ -90,6 +90,27 @@ for modulo in home/.config/quickshell/*/; do
     fi
 done
 
+# Exclusiones privadas (opcional): ~/.config/sincronizar-excluir.txt, fuera del repositorio, un texto por línea.
+# Falla si alguno aparece en nombres de archivo o en el contenido. No muestra el texto buscado.
+EXCLUIR="$HOME/.config/sincronizar-excluir.txt"
+if [ -r "$EXCLUIR" ]; then
+    while IFS= read -r texto; do
+        case "$texto" in ''|\#*) continue ;; esac
+        n="$(find . -path ./.git -prune -o -iname "*$texto*" -print | head -10)"
+        if [ -n "$n" ]; then
+            echo "-- Archivos con un nombre de la lista privada de exclusión:"
+            echo "$n" | sed 's/^/   /'
+            grave=1
+        fi
+        r="$(grep -rnIiF --exclude-dir=.git --exclude=revisar-privacidad.sh -e "$texto" . 2>/dev/null | cut -d: -f1,2 | head -10)"
+        if [ -n "$r" ]; then
+            echo "-- Texto de la lista privada de exclusión (en estas líneas):"
+            echo "$r" | sed 's/^/   /'
+            grave=1
+        fi
+    done < "$EXCLUIR"
+fi
+
 echo "-- Palabras a revisar a mano (normalmente es código que PIDE la contraseña, no una contraseña):"
 grep -rnIiE --exclude-dir=.git --exclude=revisar-privacidad.sh -e 'password *[:=] *["'"'"'][^"'"'"']+|passwd *=|psk *=' . | head -10 | sed 's/^/   /'
 

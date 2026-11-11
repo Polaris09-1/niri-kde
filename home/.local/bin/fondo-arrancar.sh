@@ -19,6 +19,10 @@ if [ -n "$amd" ] && [ "$amd" != "$primero" ] && [ -f "$SO" ]; then
     export FONDO_RENDER_DESDE="$primero" FONDO_RENDER_HASTA="$amd"
     export LD_PRELOAD="$SO${LD_PRELOAD:+:$LD_PRELOAD}"
 fi
+# fondo y galería solo decodifican. Sin esto, Qt prueba al crear el primer MediaPlayer todos los codificadores
+# por hardware (vdpau, cuda, vaapi, qsv, vulkan): ~225 ms al arrancar y un contexto CUDA en la NVIDIA.
+# Vacía (pero definida) = no probar ninguno. Ver ~/.config/quickshell/galeria/OPTIMIZACION.md
+export QT_FFMPEG_ENCODING_HW_DEVICE_TYPES=
 MODULO="${1:-fondo}"
 case "$MODULO" in fondo|galeria) ;; *) echo "módulo no previsto: $MODULO" >&2; exit 2 ;; esac
 # La galería se lanza al pulsar el atajo: dos pulsaciones seguidas no deben crear dos

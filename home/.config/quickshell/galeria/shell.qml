@@ -23,10 +23,11 @@ Scope {
             esperaArranque.start()
         })
     }
-    // Abrir cuando ya se sabe qué fondo es y está la lista: si no, se vería la primera tarjeta y luego un salto
+    // Abrir cuando ya se sabe qué fondo es, está la lista y se leyó la caché de fotogramas: si no, se vería
+    // la primera tarjeta y luego un salto, o tarjetas vacías
     property bool arrancando: false
     function revisarArranque() {
-        if (root.arrancando && root.actual !== "" && carpetaModelo.count > 0) root.abrir()
+        if (root.arrancando && root.actual !== "" && carpetaModelo.count > 0 && root.cacheLeida) root.abrir()
     }
     // Sin fondos o sin fondo actual también se abre
     Timer { id: esperaArranque; interval: 500; onTriggered: if (root.arrancando) root.abrir() }
@@ -183,9 +184,8 @@ Scope {
         root.arrancando = false
         esconder.stop()
         root.aplicando = false
-        ventana.visible = true
-        root.abierto = true
-        // Empieza en el fondo actual, sin animar el salto
+        // Empieza en el fondo actual, sin animar el salto. Antes de "abierto": así la vista previa
+        // recibe directamente esta tarjeta y no la primera de la lista
         for (var i = 0; i < carpetaModelo.count; i++) {
             if (carpetaModelo.get(i, "filePath") === root.actual) {
                 root.animar = false
@@ -194,6 +194,9 @@ Scope {
                 break
             }
         }
+        ventana.visible = true
+        root.abierto = true
+        calcularPaleta.restart()
         teclado.forceActiveFocus()
     }
 
@@ -252,12 +255,52 @@ Scope {
                       "*.mp4", "*.webm", "*.mkv", "*.mov", "*.gif", "*.MP4", "*.GIF"]
         showDirs: false
         sortField: FolderListModel.Name
-        onStatusChanged: { root.version++; if (status === FolderListModel.Ready) buscarFotogramas.restart() }
-        onCountChanged: { root.version++; buscarFotogramas.restart(); root.revisarArranque() }
+        onStatusChanged: { root.version++; root.leerCache() }
+        onCountChanged: { root.version++; root.leerCache(); root.revisarArranque() }
     }
 
     // ===== Fotogramas de vídeos/GIF (miniatura, vista previa y paleta) =====
-    // Las rutas van como argumentos (nunca dentro del texto del comando)
+    // Los ya guardados se leen de la caché sin lanzar procesos: fondo-fotograma.sh los guarda como
+    // <md5 de la ruta>.jpg y vale si no es más viejo que el vídeo (la misma regla que el script).
+    // Solo los que faltan o están viejos pasan por el script.
+    readonly property string dirFotogramas: Quickshell.env("HOME") + "/.cache/galeria/fotogramas"
+    property bool cacheLeida: false
+    FolderListModel {
+        id: cacheModelo
+        folder: "file://" + root.dirFotogramas
+        nameFilters: ["*.jpg"]
+        showDirs: false
+        sortField: FolderListModel.Unsorted
+        onStatusChanged: root.leerCache()
+        onCountChanged: root.leerCache()
+    }
+    function leerCache() {
+        if (carpetaModelo.status !== FolderListModel.Ready) return
+        // Sin carpeta de caché (primera vez) no hay nada que leer: el script la crea
+        if (cacheModelo.status === FolderListModel.Ready) {
+            var hay = {}
+            for (var j = 0; j < cacheModelo.count; j++) {
+                if (cacheModelo.get(j, "fileSize") > 0)
+                    hay[cacheModelo.get(j, "fileName")] = cacheModelo.get(j, "fileModified").getTime()
+            }
+            var copia = Object.assign({}, root.fotogramas), cambio = false
+            for (var i = 0; i < carpetaModelo.count; i++) {
+                var r = carpetaModelo.get(i, "filePath")
+                if (!root.esAnimado(r) || copia[r]) continue
+                var nombre = Qt.md5(r) + ".jpg"
+                if (hay[nombre] !== undefined && hay[nombre] >= carpetaModelo.get(i, "fileModified").getTime()) {
+                    copia[r] = root.dirFotogramas + "/" + nombre
+                    cambio = true
+                }
+            }
+            if (cambio) root.fotogramas = copia
+        } else if (cacheModelo.status === FolderListModel.Loading) return
+        root.cacheLeida = true
+        root.revisarArranque()
+        buscarFotogramas.restart()
+    }
+
+    // Los que faltan, con el script. Las rutas van como argumentos (nunca dentro del texto del comando)
     Timer {
         id: buscarFotogramas
         interval: 300
@@ -334,11 +377,12 @@ Scope {
         onRunningChanged: if (!running) calcularPaleta.restart()
     }
 
+    // Espera a que la selección se asiente; la primera paleta (al abrir) no espera
     Timer {
         id: calcularPaleta
-        interval: 200
+        interval: Object.keys(root.paletas).length === 0 ? 0 : 200
         onTriggered: {
-            if (root.vista === "" || root.paletas[root.vista] || pMatugen.running) return
+            if (!root.abierto || root.vista === "" || root.paletas[root.vista] || pMatugen.running) return
             if (root.imagenDe(root.vista) === "") return      // fotograma aún no listo
             pMatugen.ruta = root.vista
             pMatugen.running = true

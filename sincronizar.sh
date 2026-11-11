@@ -28,6 +28,20 @@ grep -vE '^\s*(#|$)' "$REPO/archivos.txt" | while IFS= read -r ruta; do
     echo "   $ruta"
 done
 
+# Exclusiones privadas (opcional): ~/.config/sincronizar-excluir.txt, fuera del repositorio, un texto por línea.
+# Se quita de la copia todo archivo o carpeta cuyo nombre lo contenga y todo enlace que apunte a una ruta que lo
+# contenga (sin distinguir mayúsculas). revisar-privacidad.sh falla si aun así se cuela en nombres o contenido.
+EXCLUIR="$HOME/.config/sincronizar-excluir.txt"
+if [ -r "$EXCLUIR" ]; then
+    grep -vE '^\s*(#|$)' "$EXCLUIR" | while IFS= read -r texto; do
+        find "$DEST" -depth -iname "*$texto*" -exec rm -rf {} + 2>/dev/null || true
+        find "$DEST" -type l | while IFS= read -r enlace; do
+            if readlink "$enlace" | grep -qiF -- "$texto"; then rm -f "$enlace"; fi
+        done
+    done
+    echo "   (exclusiones privadas aplicadas)"
+fi
+
 # Basura que nunca debe ir al repositorio
 find "$DEST" \( -name '*.log' -o -name '*.bak' -o -name '*.tmp' -o -name '*~' -o -name '*.bak.*' \) -print -delete
 

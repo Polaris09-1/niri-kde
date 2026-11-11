@@ -8,6 +8,7 @@ import Quickshell.Services.SystemTray
 import Quickshell.Services.Mpris
 import Quickshell.Bluetooth
 import QtQuick
+import Qt.labs.folderlistmodel
 
 // Barra superior (diseño A): workspaces + ventana | hora | bandeja + píldora de estado.
 // La píldora abre el panel de estado, la hora el calendario y la campanita las notificaciones; crecen
@@ -1300,6 +1301,32 @@ Scope {
                                 id: filaDer
                                 anchors.centerIn: parent
                                 spacing: 4
+
+                                // Extras locales (opcional, no van en el repositorio): cada .qml que haya en
+                                // ~/.local/share/hola/extras se muestra aquí, al inicio de la isla derecha.
+                                // Si existen, se les dan: tema (colores de matugen), s (la barra: alfa, fuente,
+                                // altoIsla…) y principal (true solo en la barra del monitor principal, para que
+                                // algo único, como un IpcHandler, no se repita en cada monitor).
+                                // Sin la carpeta o vacía: no hay nada y la barra sigue igual.
+                                // Si la carpeta se crea con la barra ya abierta, hace falta reiniciarla una vez.
+                                Repeater {
+                                    model: FolderListModel {
+                                        folder: "file://" + Quickshell.env("HOME") + "/.local/share/hola/extras"
+                                        nameFilters: ["*.qml"]
+                                        showDirs: false
+                                        sortField: FolderListModel.Name
+                                    }
+                                    delegate: Loader {
+                                        required property url fileUrl
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        source: fileUrl
+                                        onLoaded: {
+                                            if ("tema" in item) item.tema = Qt.binding(() => tema)
+                                            if ("s" in item) item.s = root
+                                            if ("principal" in item) item.principal = Qt.binding(() => root.barraPrincipal === barra)
+                                        }
+                                    }
+                                }
 
                                 // Bandeja del sistema (solo si hay iconos)
                                 Row {

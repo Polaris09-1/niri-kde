@@ -49,5 +49,55 @@
       }
     ]
   },
-  "fondos": {}
+  "fondos": {
+    "minecraft-cozy-fireplace_wallsflow-com.mp4": {
+      "elementos": [
+        {
+          "clave": "reloj",
+          "tipo": "reloj",
+          "col": 42,
+          "fila": 17,
+          "tam": "L",
+          "opciones": {
+            "h12": true,
+            "tarjeta": false
+          }
+        },
+        {
+          "clave": "clima",
+          "tipo": "clima",
+          "col": 47,
+          "fila": 9,
+          "tam": "M",
+          "opciones": {}
+        },
+        {
+          "clave": "musica",
+          "tipo": "musica",
+          "col": 25,
+          "fila": 25,
+          "tam": "S",
+          "opciones": {}
+        },
+        {
+          "clave": "calendario",
+          "tipo": "calendario",
+          "col": 51,
+          "fila": 1,
+          "tam": "S",
+          "opciones": {
+            "domingo": true
+          }
+        },
+        {
+          "clave": "recordatorios",
+          "tipo": "recordatorios",
+          "col": 0,
+          "fila": 18,
+          "tam": "M",
+          "opciones": {}
+        }
+      ]
+    }
+  }
 }

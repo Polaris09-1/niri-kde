@@ -17,6 +17,11 @@ Rectangle {
         try { return JSON.parse(t.d.acciones || "[]").filter(a => a.id !== "default" && a.texto !== "") }
         catch (e) { return [] }
     }
+    // Botones propios de la barra (Editar, Carpeta): sirven también tras recargar
+    readonly property var propios: {
+        try { return JSON.parse(t.d.botones || "[]") } catch (e) { return [] }
+    }
+    readonly property var botones: (t.d.vivo ? t.acciones : []).concat(t.propios)
     readonly property bool urgente: t.d.urgencia === 2
 
     signal cerrar()
@@ -195,14 +200,27 @@ Rectangle {
             }
         }
 
-        // Botones de acción (solo si la app los ofrece y la notificación sigue viva)
+        // Por qué no se pudo abrir (archivo borrado, programa sin instalar)
+        Text {
+            width: parent.width
+            visible: (t.d.nota || "") !== ""
+            text: "✕  " + (t.d.nota || "")
+            wrapMode: Text.Wrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
+            font.family: t.s.fuente
+            font.pixelSize: 11
+            color: "#ff8a80"
+        }
+
+        // Botones de acción: los de la app (si sigue viva) y los propios
         Flow {
             width: parent.width
             spacing: 6
             topPadding: 2
-            visible: t.acciones.length > 0 && t.d.vivo
+            visible: t.botones.length > 0
             Repeater {
-                model: t.acciones
+                model: t.botones
                 delegate: BotonTexto {
                     required property var modelData
                     required property int index

@@ -1166,22 +1166,29 @@ Scope {
                         if (v.is_floating && v.layout.tile_pos_in_workspace_view !== null)
                             flotante = Math.max(flotante, v.layout.tile_size[0] * v.layout.tile_size[1])
                     })
+                    // niri no dice qué columnas están en pantalla (tile_pos_in_workspace_view solo existe en las
+                    // flotantes): sumar todas daba "tapado" con columnas desplazadas fuera de la vista y el escritorio
+                    // visible al lado, y los widgets se quedaban parados (2026-11-10). Solo se cuenta lo que seguro
+                    // se ve: la columna activa (niri siempre la muestra) o todas si caben juntas en la pantalla.
+                    var activas = ws.filter(w => ids.indexOf(w.id) >= 0).map(w => w.active_window_id)
                     var cols = {}
                     vis.forEach(v => {
                         var pos = v.layout.pos_in_scrolling_layout
                         if (v.is_floating || !pos) return
                         var k = v.workspace_id + ":" + pos[0]
-                        var c = cols[k] || { w: 0, h: 0 }
+                        var c = cols[k] || { w: 0, h: 0, activa: false }
                         c.w = Math.max(c.w, v.layout.tile_size[0])
                         c.h += v.layout.tile_size[1]
+                        if (activas.indexOf(v.id) >= 0) c.activa = true
                         cols[k] = c
                     })
-                    var ancho = 0, alto = 0
+                    var ancho = 0, alto = 0, activa = 0
                     Object.keys(cols).forEach(k => {
                         ancho += cols[k].w + 16
                         alto = Math.max(alto, cols[k].h)
+                        if (cols[k].activa) activa = Math.min(W, cols[k].w) * Math.min(H, cols[k].h)
                     })
-                    var mosaico = Math.min(W, ancho) * Math.min(H, alto)
+                    var mosaico = ancho <= W ? ancho * Math.min(H, alto) : activa
                     root.cobertura = Math.min(1, Math.max(mosaico, flotante) / Math.max(1, W * H))
                     root.tapado = root.cobertura >= 0.85
                 } catch (e) {

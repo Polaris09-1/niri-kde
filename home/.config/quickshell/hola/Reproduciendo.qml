@@ -69,6 +69,20 @@ Scope {
         var t = r.activo && r.activo.trackTitle ? String(r.activo.trackTitle).trim() : ""
         return t || r.nombreApp || "Reproduciendo"
     }
+    // Para la píldora del tocadiscos (PildoraMusica.qml): solo título y artista de verdad. Nunca el nombre de la app ni de la página
+    // (YouTube, Firefox…): sin eso, vacío, y la píldora muestra solo el tocadiscos.
+    readonly property var marcas: /\s+[-–—|·]\s*(youtube( music)?|spotify|netflix|disney\+|twitch|soundcloud|deezer|tidal|prime video|max)\s*$/i
+    readonly property var soloMarca: /^(youtube( music)?|spotify|netflix|disney\+|twitch|soundcloud|deezer|tidal|prime video|firefox|mozilla firefox|zen( browser)?|chromium|google chrome|brave|vivaldi|reproduciendo|unknown|desconocido)$/i
+    function limpio(t) {
+        t = String(t || "").replace(r.marcas, "").trim()
+        if (t === "" || r.soloMarca.test(t)) return ""
+        var l = t.toLowerCase()
+        var nombres = [r.nombreApp, r.activo ? r.activo.identity : ""].map(n => String(n || "").toLowerCase())
+        return nombres.indexOf(l) >= 0 ? "" : t
+    }
+    readonly property string cancion: r.activo ? r.limpio(r.activo.trackTitle) : ""
+    readonly property string artista: r.cancion !== "" && r.activo
+        ? r.limpio(String(r.activo.trackArtist || "").replace(/\s+-\s+topic\s*$/i, "")) : ""
     readonly property string icono: Quickshell.iconPath(r.entrada && r.entrada.icon ? r.entrada.icon : "audio-x-generic", "audio-x-generic")
 
     // ===== Píldora visible =====

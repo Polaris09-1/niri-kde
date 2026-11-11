@@ -290,7 +290,54 @@ Scope {
     }
 
     // ===== Capturas y grabación =====
+    // ===== Clic en la píldora de música: ir a la ventana de la app que suena =====
+    // Candidatas: app_id parecido al .desktop o al nombre del reproductor (en flatpak, como Zen, el MPRIS lo
+    // publica un proxy con otro PID) o mismo PID que el dueño del MPRIS (apps normales). Entre varias, la que
+    // lleva el título de la canción en el suyo (la pestaña que suena), si no la usada más hace poco.
+    // Si no hay ninguna, no hace nada: nunca abre el calendario (eso es solo la hora).
+    property string musicaVentana: ""        // resultado del último clic, para el IPC
+    function enfocarMusica() {
+        if (pMusicaVentana.running) return
+        var j = rep.activo
+        var nombres = j ? [j.desktopEntry || "", j.identity || "", rep.nombreApp || ""]
+                        : rep.audioConfirmado.concat([rep.nombreApp || ""])
+        pMusicaVentana.nombres = nombres.filter(n => n !== "")
+        pMusicaVentana.cancion = j && j.trackTitle ? String(j.trackTitle).trim() : ""
+        pMusicaVentana.command = ["sh", "-c", 'if [ -n "$1" ]; then gdbus call --session --dest org.freedesktop.DBus '
+            + '--object-path /org/freedesktop/DBus --method org.freedesktop.DBus.GetConnectionUnixProcessID "$1" 2>/dev/null; fi; '
+            + 'echo; niri msg -j windows', "sh", j ? (j.dbusName || "") : ""]
+        pMusicaVentana.running = true
+    }
+    Process {
+        id: pMusicaVentana
+        property var nombres: []
+        property string cancion: ""
+        stdout: StdioCollector { id: salidaMusicaVentana }
+        onExited: {
+            var partes = salidaMusicaVentana.text.split("\n")
+            var m = /uint32 (\d+)/.exec(partes[0] || "")
+            var pid = m ? parseInt(m[1]) : -1
+            var l = []
+            try { l = JSON.parse(partes.slice(1).join("\n")) } catch (e) {}
+            var c = l.filter(w => w.pid === pid || avisos.coincide(w.app_id, pMusicaVentana.nombres))
+            var t = pMusicaVentana.cancion.toLowerCase()
+            var puntos = w => (t !== "" && (w.title || "").toLowerCase().indexOf(t) >= 0 ? 2e12 : 0)
+                + (w.focus_timestamp ? w.focus_timestamp.secs * 1000 + w.focus_timestamp.nanos / 1e6 : 0)
+            c.sort((a, b) => puntos(b) - puntos(a))
+            if (c.length === 0) { root.musicaVentana = "ninguna"; return }
+            root.musicaVentana = c[0].id + " " + c[0].app_id
+            Quickshell.execDetached(["niri", "msg", "action", "focus-window", "--id", String(c[0].id)])
+        }
+    }
+
     Grabadora { id: grabadora }
+    AvisosSistema {
+        id: avisosSistema
+        bateria: root.bateria
+        cargando: root.cargando
+        wifi: root.wifiNombre
+        adaptador: root.btAdaptador
+    }
 
     property int cuentaCaptura: 0
     property string capturaPendiente: ""
@@ -375,6 +422,9 @@ Scope {
     Avisos {
         id: avisos
         historialVisible: root.panel === "avisos"
+        // Al llevar a su destino, el panel de avisos se cierra solo
+        onHecho: clave => { if (root.panel === "avisos") root.panel = "" }
+        onIrAPagina: nombre => root.abrirPagina(nombre)
         emergentesVisibles: root.panel !== "avisos"
         // En pantalla completa los avisos normales no salen como popup (van al historial); los urgentes sí
         callarPantallaCompleta: root.pantallaCompleta
@@ -505,7 +555,8 @@ Scope {
                 var rescatar = root.pantallaARescatar(d)
                 if (rescatar !== "") {
                     Quickshell.execDetached(["niri", "msg", "output", rescatar, "on"])
-                    root.ejecutar(["notify-send", "-a", "Pantalla", "-i", "video-display", "--", "Pantalla encendida",
+                    root.ejecutar(["notify-send", "-a", "Pantalla", "-i", "video-display",
+                                   "-h", "string:x-hola-destino:ajustes:pantalla", "--", "Pantalla encendida",
                                    "No quedaba ninguna encendida: se encendió " + rescatar + "."])
                 }
                 var ahora = {}
@@ -704,9 +755,14 @@ Scope {
                 islaIzq: root.barraActual ? root.barraActual.verIslaIzq : false, campana: root.barraActual ? root.barraActual.verCampana : false, esperaOcultar: rep.esperaOcultar })
         }
         // Estado de la píldora de música
+        // Lo mismo que el clic en la píldora: enfoca la ventana que suena (o nada) y dice cuál eligió
+        function clicMusica(): void { root.enfocarMusica() }
+        function musicaVentana(): string { return root.musicaVentana }
         function musica(): string {
             return JSON.stringify({ presente: rep.presente, sonando: rep.sonando, expandida: root.barraActual ? root.barraActual.musica.expandida : false,
-                ancho: root.barraActual ? root.barraActual.musica.width : 0, titulo: rep.titulo, app: rep.nombreApp, conControles: !!rep.activo,
+                ancho: root.barraActual ? root.barraActual.musica.width : 0, titulo: rep.titulo, cancion: rep.cancion, artista: rep.artista, app: rep.nombreApp, conControles: !!rep.activo,
+                giro: root.barraActual ? Math.round(root.barraActual.musica.velocidad * 10) / 10 : 0,
+                brazo: root.barraActual ? root.barraActual.musica.brazoApoyado : false,
                 audio: rep.audioConfirmado, quiereOndas: rep.quiereOndas, cavaFallo: rep.cavaFallo, niveles: rep.niveles })
         }
         // Simula dónde está el cursor (hora|campana|pildora|musica|panel|fuera) para probar sin mouse
@@ -760,7 +816,8 @@ Scope {
             for (var i = 0; i < avisos.historial.count; i++) {
                 var f = avisos.historial.get(i)
                 l.push({ i: i, app: f.app, resumen: f.resumen, cuerpo: f.cuerpo, icono: f.icono, imagen: f.imagen,
-                    urgencia: f.urgencia, duracion: f.duracion, acciones: JSON.parse(f.acciones), vivo: f.vivo })
+                    urgencia: f.urgencia, duracion: f.duracion, acciones: JSON.parse(f.acciones), vivo: f.vivo,
+                    destino: f.destino, botones: JSON.parse(f.botones || "[]"), entrada: f.entrada, nota: f.nota })
             }
             var e = []
             for (var j = 0; j < avisos.emergentes.count; j++) e.push(avisos.emergentes.get(j).resumen)
@@ -776,6 +833,7 @@ Scope {
         // i = posición en el historial (0 = la más nueva)
         function accionAviso(i: int, id: string): string {
             if (i < 0 || i >= avisos.historial.count) return "no existe"
+            if (id.startsWith("hola:")) { avisos.activar(avisos.historial.get(i).clave, id); return "ok" }
             return avisos.invocar(avisos.historial.get(i).clave, id) ? "ok" : "sin esa acción"
         }
         function descartarAviso(i: int): string {
@@ -794,7 +852,7 @@ Scope {
         function paginaEn(nombre: string, salida: string): string { root.abrirPagina(nombre, root.barraDe(salida)); return root.pagina }
         // Grabar pantalla: inicia (pantalla completa, último audio elegido) o detiene
         function grabar(): string { if (grabadora.grabando) grabadora.detener(); else root.grabar("pantalla", grabadora.audio); return grabadora.grabando ? "deteniendo" : "iniciando" }
-        function grabacion(): string { return JSON.stringify({ grabando: grabadora.grabando, segundos: grabadora.segundos, ruta: grabadora.ruta, error: grabadora.error }) }
+        function grabacion(): string { return JSON.stringify({ grabando: grabadora.grabando, procesando: grabadora.procesando, segundos: grabadora.segundos, ruta: grabadora.ruta, error: grabadora.error }) }
         function capturar(tipo: string, retraso: int): void { root.capturar(tipo, retraso) }
         function grabarCon(modo: string, audio: string): void { root.grabar(modo, audio) }
         function info(): string {
@@ -829,6 +887,8 @@ Scope {
             return root.textoPerfil()
         }
         // Mismas funciones que llaman los clics, para probarlas sin mouse
+        // Avisos de batería, Wi-Fi y Bluetooth con valores inventados: bateria 16,15 · wifi Casa, · bt Auriculares,
+        function probarAvisoSistema(tipo: string, valor: string): string { return avisosSistema.probar(tipo, valor) }
         function probar(accion: string, valor: real): string {
             if (accion === "silenciar") root.silenciar()
             else if (accion === "volumen") root.ponerVolumen(valor)
@@ -1173,7 +1233,7 @@ Scope {
                             simEncima: root.simCursor === "musica"
                             disponible: islaReloj.x - 8 - (islaIzq.visible ? islaIzq.x + islaIzq.width + 8 : 10)
                             habilitada: root.verMusica
-                            onAbrir: root.alternar("calendario", pildoraMusica, barra)
+                            onAbrir: root.enfocarMusica()
                         }
 
                         // ---------- Isla central: hora (abre el calendario) ----------
@@ -1301,7 +1361,7 @@ Scope {
                                 Rectangle {
                                     id: indicadorGrab
                                     anchors.verticalCenter: parent.verticalCenter
-                                    visible: grabadora.grabando || root.cuentaCaptura > 0
+                                    visible: grabadora.grabando || grabadora.procesando || root.cuentaCaptura > 0
                                     height: 30
                                     width: filaGrab.width + 20
                                     radius: height / 2
@@ -1326,6 +1386,7 @@ Scope {
                                         }
                                         Text {
                                             text: grabadora.grabando ? (maGrab.containsMouse ? "Detener" : grabadora.tiempo())
+                                                : grabadora.procesando ? "Procesando…"
                                                 : root.ic(0xF0100) + "  " + root.cuentaCaptura
                                             font.family: root.fuente
                                             font.pixelSize: 12
@@ -1337,7 +1398,7 @@ Scope {
                                         id: maGrab
                                         anchors.fill: parent
                                         hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
+                                        cursorShape: grabadora.grabando ? Qt.PointingHandCursor : Qt.ArrowCursor
                                         onClicked: if (grabadora.grabando) grabadora.detener()
                                     }
                                 }
@@ -2492,13 +2553,12 @@ Scope {
                                     d: filaAviso.fila
                                     ahora: reloj.date
                                     onCerrar: avisos.descartar(filaAviso.fila.clave)
-                                    onAccion: id => { avisos.invocar(filaAviso.fila.clave, id); root.panel = "" }
-                                    onClicCuerpo: {
-                                        if (filaAviso.fila.vivo && JSON.parse(filaAviso.fila.acciones).some(a => a.id === "default")) {
-                                            avisos.invocar(filaAviso.fila.clave, "default")
-                                            root.panel = ""
-                                        }
+                                    onAccion: id => {
+                                        if (id.startsWith("hola:")) { avisos.activar(filaAviso.fila.clave, id); return }
+                                        avisos.invocar(filaAviso.fila.clave, id)
+                                        root.panel = ""
                                     }
+                                    onClicCuerpo: avisos.clicCuerpo(filaAviso.fila.clave)
                                 }
                             }
                         }

@@ -30,6 +30,24 @@ Item {
     readonly property real altoContenido: contenido.implicitHeight
     readonly property real anchoContenido: contenido.implicitWidth
 
+    // Latido de los dos puntos: fundido en 4 pasos de 125 ms en lugar de a la frecuencia de la pantalla.
+    // Cada paso redibuja la capa con sombra: suave a 144 Hz costaba 14 % + 17 % de niri; así, unos 5 dibujos por segundo.
+    property real latido: 1
+    Timer {
+        interval: 125
+        repeat: true
+        running: w.activo
+        triggeredOnStart: true
+        onTriggered: {
+            var t = new Date()
+            var par = t.getSeconds() % 2 === 0
+            var desde = par ? 0.25 : 1, hasta = par ? 1 : 0.25
+            var p = Math.min(4, Math.floor(t.getMilliseconds() / 125) + 1) / 4
+            var suave = (1 - Math.cos(Math.PI * p)) / 2
+            w.latido = desde + (hasta - desde) * suave
+        }
+    }
+
     SystemClock {
         id: reloj
         enabled: w.activo
@@ -137,11 +155,7 @@ Item {
                     font.weight: Font.ExtraLight
                     font.pixelSize: 140 * w.e
                     color: w.tema.primary
-                    opacity: reloj.date.getSeconds() % 2 === 0 ? 1 : 0.25
-                    Behavior on opacity {
-                        enabled: w.activo
-                        NumberAnimation { duration: 500; easing.type: Easing.InOutSine }
-                    }
+                    opacity: w.latido
                 }
                 Text {
                     text: Qt.formatDateTime(reloj.date, "mm")

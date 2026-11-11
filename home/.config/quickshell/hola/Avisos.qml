@@ -106,6 +106,30 @@ Scope {
         return ""
     }
 
+    // ===== Adónde lleva cada aviso =====
+    // Los avisos propios dicen su destino con la pista x-hola-destino (notify-send -h string:x-hola-destino:…):
+    //   captura:<ruta>  clic → Gwenview, botón Editar → GIMP
+    //   video:<ruta>    clic → Haruna, botón Carpeta → Dolphin
+    //   carpeta:<ruta>  clic → Dolphin con el archivo seleccionado
+    //   pagina:<nombre> clic → esa página del panel de estado
+    //   ajustes:<sec>   clic → Ajustes en esa sección
+    // Sin destino: la acción "default" de la app si sigue viva, y enfocar su ventana en niri.
+    // Se guarda en el historial: funciona también tras recargar la barra.
+    function destinoDe(n) {
+        var h = n.hints || {}
+        var v = h["x-hola-destino"]
+        if (v) return String(v)
+        // Capturas antiguas (antes de la pista): la ruta llega como -i
+        var foto = av.imagenDe(n)
+        if (n.appName === "Capturas" && foto.startsWith("file://")) return "captura:" + foto.slice(7)
+        return ""
+    }
+    function botonesDe(destino) {
+        if (destino.startsWith("captura:")) return [{ id: "hola:editar", texto: "Editar" }]
+        if (destino.startsWith("video:")) return [{ id: "hola:carpeta", texto: "Carpeta" }]
+        return []
+    }
+
     function datos(n, clave) {
         var acc = []
         var lista = n.actions || []
@@ -121,6 +145,10 @@ Scope {
             hora: Date.now(),
             urgencia: n.urgency === NotificationUrgency.Critical ? 2 : n.urgency === NotificationUrgency.Low ? 0 : 1,
             acciones: JSON.stringify(acc),
+            destino: av.destinoDe(n),
+            botones: JSON.stringify(av.botonesDe(av.destinoDe(n))),
+            entrada: n.desktopEntry || "",
+            nota: "",
             vivo: true,
             // ms (expireTimeout ya viene en ms); 0 = se queda hasta que la cierres
             duracion: n.expireTimeout > 0 ? Math.round(n.expireTimeout)
@@ -286,11 +314,112 @@ Scope {
         return true
     }
 
-    // Clic en el cuerpo: acción "default" si la app la ofrece; si no, solo oculta el popup
-    function clicCuerpo(clave) {
+    // Clic en el cuerpo (id "") o en un botón propio ("hola:…"): lleva a su destino.
+    // Al terminar emite hecho(clave): el popup se va y el panel de avisos se cierra.
+    signal hecho(real clave)
+    signal irAPagina(string nombre)
+    function clicCuerpo(clave) { av.activar(clave, "") }
+
+    function fila(clave) {
+        var i = av.indice(historial, clave)
+        if (i >= 0) return historial.get(i)
+        var j = av.indice(emergentes, clave)
+        return j >= 0 ? emergentes.get(j) : null
+    }
+    function listo(clave) {
+        av.quitarEmergente(clave)
+        av.hecho(clave)
+    }
+    function ponerNota(clave, texto) {
+        var i = av.indice(historial, clave)
+        if (i >= 0) historial.setProperty(i, "nota", texto)
+        var j = av.indice(emergentes, clave)
+        if (j >= 0) emergentes.setProperty(j, "nota", texto)
+    }
+
+    function activar(clave, id) {
+        var f = av.fila(clave)
+        if (!f) return
+        var dest = f.destino || ""
+        var p = dest.indexOf(":")
+        var tipo = p > 0 ? dest.slice(0, p) : ""
+        var arg = p > 0 ? dest.slice(p + 1) : ""
+        if (tipo === "captura" || tipo === "video" || tipo === "carpeta") {
+            var cmd = tipo === "captura" ? (id === "hola:editar" ? ["gimp", arg] : ["gwenview", arg])
+                : tipo === "video" ? (id === "hola:carpeta" ? ["dolphin", "--select", arg] : ["haruna", arg])
+                : ["dolphin", "--select", arg]
+            av.abrirArchivo(clave, arg, cmd)
+            return
+        }
+        if (tipo === "pagina") { av.listo(clave); av.irAPagina(arg); return }
+        if (tipo === "ajustes") {
+            Quickshell.execDetached([Quickshell.env("HOME") + "/.local/bin/ajustes-abrir.sh", arg])
+            av.listo(clave)
+            return
+        }
+        // Avisos de otras apps: su acción "default" si sigue viva y, además, enfocar su ventana
         var n = av.vivos[clave]
         if (n && (n.actions || []).some(a => a.identifier === "default")) av.invocar(clave, "default")
-        else av.quitarEmergente(clave)
+        av.enfocarApp(clave, [f.entrada || "", f.app || ""])
+    }
+
+    // Comprueba que el archivo existe y que el programa está instalado antes de abrirlo
+    function abrirArchivo(clave, ruta, cmd) {
+        if (pAbrir.running) return
+        pAbrir.clave = clave
+        pAbrir.cmd = cmd
+        pAbrir.ruta = ruta
+        pAbrir.command = ["sh", "-c", '[ -e "$1" ] || exit 3; command -v "$2" >/dev/null || exit 4', "sh", ruta, cmd[0]]
+        pAbrir.running = true
+    }
+    Process {
+        id: pAbrir
+        property real clave
+        property var cmd: []
+        property string ruta: ""
+        onExited: code => {
+            if (code === 0) {
+                Quickshell.execDetached(pAbrir.cmd)
+                av.listo(pAbrir.clave)
+            } else if (code === 4) {
+                av.ponerNota(pAbrir.clave, "Falta instalar " + pAbrir.cmd[0])
+            } else {
+                av.ponerNota(pAbrir.clave, "El archivo ya no existe: " + pAbrir.ruta.replace(/^.*\//, ""))
+            }
+        }
+    }
+
+    // app_id de niri frente al nombre de la app o su .desktop (firefox, org.telegram.desktop…)
+    function coincide(appId, nombres) {
+        var a = (appId || "").toLowerCase()
+        if (a === "") return false
+        return nombres.some(function (n) {
+            n = (n || "").toLowerCase().replace(/\.desktop$/, "")
+            if (n.length < 3) return false
+            return a === n || a.endsWith("." + n) || n.endsWith("." + a) || (n.length >= 4 && a.indexOf(n) >= 0)
+        })
+    }
+    function enfocarApp(clave, nombres) {
+        if (pVentanas.running) { av.listo(clave); return }
+        pVentanas.clave = clave
+        pVentanas.nombres = nombres
+        pVentanas.running = true
+    }
+    Process {
+        id: pVentanas
+        property real clave
+        property var nombres: []
+        command: ["niri", "msg", "-j", "windows"]
+        stdout: StdioCollector { id: salidaVentanas }
+        onExited: {
+            var l = []
+            try { l = JSON.parse(salidaVentanas.text) } catch (e) {}
+            // La que pidió atención primero (la app la marca urgente al avisar)
+            var c = l.filter(w => av.coincide(w.app_id, pVentanas.nombres))
+                     .sort((x, y) => (y.is_urgent ? 1 : 0) - (x.is_urgent ? 1 : 0))
+            if (c.length > 0) Quickshell.execDetached(["niri", "msg", "action", "focus-window", "--id", String(c[0].id)])
+            av.listo(pVentanas.clave)
+        }
     }
 
     function limpiar() {
@@ -350,6 +479,12 @@ Scope {
                     f.vivo = false
                     f.acciones = "[]"
                     f.saliendo = false
+                    // Capturas guardadas antes de existir el destino: la ruta está en la imagen
+                    f.destino = f.destino || (f.app === "Capturas" && (f.imagen || "").startsWith("file://")
+                                              ? "captura:" + f.imagen.slice(7) : "")
+                    f.botones = JSON.stringify(av.botonesDe(f.destino))
+                    f.entrada = f.entrada || ""
+                    f.nota = ""
                     if (av.indice(historial, f.clave) < 0) historial.append(f)
                     av.contador = Math.max(av.contador, f.clave)
                 }
@@ -369,7 +504,7 @@ Scope {
                     // las imágenes en memoria de la app (image://) no sobreviven
                     imagen: f.imagen.startsWith("image://") ? "" : f.imagen,
                     resumen: f.resumen, cuerpo: f.cuerpo, hora: f.hora, urgencia: f.urgencia,
-                    duracion: f.duracion })
+                    duracion: f.duracion, destino: f.destino, entrada: f.entrada })
             }
             archivoHistorial.setText(JSON.stringify(l))
         }

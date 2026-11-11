@@ -205,6 +205,7 @@ Scope {
         }
     }
     onAnimadoChanged: if (animado) revisar.restart()
+    onConBateriaChanged: if (animado) revisar.restart()
 
     Process {
         id: consulta
@@ -238,6 +239,7 @@ Scope {
             property bool enTransicion: false
             property bool tapado: false       // las ventanas tapan (casi) todo su workspace visible
             property real cobertura: 0        // fracción tapada (para "info")
+            property real coberturaSegura: 0  // solo lo que seguro está en pantalla (ver revisarTapado)
             property bool primera: true       // aún sin fondo: el primero entra sin transición
             property var pendiente: null      // { tipo, x, y } mientras carga el fondo nuevo
 
@@ -298,6 +300,9 @@ Scope {
                     enTransicion: mon.enTransicion,
                     tapado: mon.tapado,
                     cobertura: Math.round(mon.cobertura * 100) / 100,
+                    coberturaSegura: Math.round(mon.coberturaSegura * 100) / 100,
+                    regla: root.conBateria ? "bateria" : "cargador",
+                    imagenFija: fijaPausa.opacity,
                     pausado: mon.pausado && root.animado,
                     motivoPausa: root.animado ? mon.motivoPausa : ""
                 }
@@ -329,14 +334,27 @@ Scope {
                     c.h += v.layout.tile_size[1]
                     columnas[k] = c
                 })
-                var ancho = 0, alto = 0
+                var ancho = 0, alto = 0, activa = 0
+                var activas = activos.map(w => w.active_window_id)
                 Object.keys(columnas).forEach(k => {
                     ancho += columnas[k].w + 16          // + hueco entre columnas
                     alto = Math.max(alto, columnas[k].h)
                 })
+                vis.forEach(v => {
+                    var pos = v.layout.pos_in_scrolling_layout
+                    if (v.is_floating || !pos || activas.indexOf(v.id) < 0) return
+                    var c = columnas[v.workspace_id + ":" + pos[0]]
+                    activa = Math.min(W, c.w) * Math.min(H, c.h)
+                })
+                // Regla de antes: todas las columnas, también las que niri desplazó fuera de la vista
+                // (ahorra más, pero a veces pausa con el fondo a la vista). Segura: solo lo que seguro se ve,
+                // la columna activa o todas si caben juntas (niri no da la posición de las de mosaico).
+                // Con cargador manda la segura; con batería, la de antes, y al pausar se ve la imagen fija.
                 var mosaico = Math.min(W, ancho) * Math.min(H, alto)
+                var seguro = ancho <= W ? ancho * Math.min(H, alto) : activa
                 mon.cobertura = Math.min(1, Math.max(mosaico, flotante) / Math.max(1, area))
-                mon.tapado = mon.cobertura >= 0.85
+                mon.coberturaSegura = Math.min(1, Math.max(seguro, flotante) / Math.max(1, area))
+                mon.tapado = (root.conBateria ? mon.cobertura : mon.coberturaSegura) >= 0.85
             }
 
             // Si el fondo nuevo nunca avisa de que está listo, transiciona igual
@@ -398,6 +416,25 @@ Scope {
                     z: mon.usarA ? 0 : 1
                     pausado: mon.pausado && !mon.usarA && !mon.enTransicion
                     onListoChanged: if (listo && mon.usarA && mon.pendiente) mon.empezar()
+                }
+
+                // Pausado por tapado o batería: la imagen fija limpia del fondo encima del vídeo detenido,
+                // para que lo que asoma no se vea congelado a medias. Solo se carga mientras hace falta.
+                Image {
+                    id: fijaPausa
+                    anchors.fill: parent
+                    z: 3
+                    readonly property bool quiere: root.animado && !mon.enTransicion && mon.puesta === root.ruta
+                        && (mon.motivoPausa === "tapado" || mon.motivoPausa === "bateria") && root.rutaImagen !== ""
+                    source: (quiere || opacity > 0) && root.rutaImagen !== "" ? "file://" + root.rutaImagen : ""
+                    sourceSize.width: width
+                    sourceSize.height: height
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    cache: false
+                    opacity: quiere && status === Image.Ready ? 1 : 0
+                    visible: opacity > 0
+                    Behavior on opacity { NumberAnimation { duration: 300; easing.type: Easing.InOutQuad } }
                 }
 
                 ShaderEffectSource {

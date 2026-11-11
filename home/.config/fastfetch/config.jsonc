@@ -4,23 +4,23 @@
     "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
     "logo": {
         "source": "arch",
-        "color": { "1": "#ffb4a8", "2": "#b8c4ff" },
+        "color": { "1": "#adc6ff", "2": "#ffb780" },
         "padding": { "top": 1, "left": 2, "right": 3 }
     },
     "display": {
         "separator": "  ",
         "color": {
-            "keys": "#ffb4a8",
-            "title": "#b8c4ff",
-            "separator": "#ad8882",
-            "output": "#fddbd6"
+            "keys": "#adc6ff",
+            "title": "#ffb780",
+            "separator": "#8c909f",
+            "output": "#e1e2eb"
         },
         "key": { "width": 13 },
         "size": { "binaryPrefix": "iec" },
         "percent": {
             "color": {
-                "green": "#ffb4a8",
-                "yellow": "#b8c4ff",
+                "green": "#adc6ff",
+                "yellow": "#ffb780",
                 "red": "#ffb4ab"
             }
         }
@@ -47,6 +47,6 @@
         },
         "break",
         // Muestras de la paleta del fondo (no los colores fijos de la terminal)
-        { "type": "custom", "format": "{##ffb4a8}● {##ffb4a8}● {##b8c4ff}● {##ffb4ab}● {##c20002}● {##891d13}● {##004bf3}● {##ad8882}●" }
+        { "type": "custom", "format": "{##adc6ff}● {##b1c6f7}● {##ffb780}● {##ffb4ab}● {##4d8efe}● {##344972}● {##db760f}● {##8c909f}●" }
     ]
 }

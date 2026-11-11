@@ -48,6 +48,7 @@ Item {
             if (c.conteoPrevio >= 0 && capturas.count > c.conteoPrevio) {
                 var nueva = capturas.get(0, "filePath")
                 Quickshell.execDetached(["notify-send", "-a", "Capturas", "-i", nueva, "-t", "4000",
+                    "-h", "string:x-hola-destino:captura:" + nueva,
                     "Captura guardada", "Copiada al portapapeles. Edítala desde el panel → Capturas"])
             }
             c.conteoPrevio = capturas.count
@@ -185,7 +186,7 @@ Item {
                 spacing: 10
 
                 Row {
-                    visible: !c.grabadora.grabando
+                    visible: !c.grabadora.grabando && !c.grabadora.procesando
                     spacing: 6
                     Repeater {
                         model: [ { id: "pantalla", t: "Pantalla completa" }, { id: "area", t: "Un área" } ]
@@ -200,7 +201,7 @@ Item {
                     }
                 }
                 Row {
-                    visible: !c.grabadora.grabando
+                    visible: !c.grabadora.grabando && !c.grabadora.procesando
                     spacing: 6
                     Repeater {
                         model: [ { id: "no", t: "Sin audio" }, { id: "sistema", t: "Sonido del sistema" }, { id: "mic", t: "Micrófono" } ]
@@ -221,8 +222,9 @@ Item {
                     Row {
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: 8
-                        visible: c.grabadora.grabando
+                        visible: c.grabadora.grabando || c.grabadora.procesando
                         Rectangle {
+                            visible: c.grabadora.grabando
                             anchors.verticalCenter: parent.verticalCenter
                             width: 10
                             height: 10
@@ -236,7 +238,7 @@ Item {
                             }
                         }
                         Text {
-                            text: "Grabando  " + c.grabadora.tiempo()
+                            text: c.grabadora.procesando ? "Preparando el vídeo…" : "Grabando  " + c.grabadora.tiempo()
                             font.family: c.s.fuente
                             font.pixelSize: 13
                             font.bold: true
@@ -245,7 +247,7 @@ Item {
                     }
                     Text {
                         id: errorGrab
-                        visible: !c.grabadora.grabando && c.grabadora.error !== ""
+                        visible: !c.grabadora.grabando && !c.grabadora.procesando && c.grabadora.error !== ""
                         anchors.verticalCenter: parent.verticalCenter
                         width: parent.width - btnGrab.width - 10
                         wrapMode: Text.Wrap
@@ -260,10 +262,11 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         tema: c.tema
                         fuente: c.s.fuente
-                        lleno: !c.grabadora.grabando
+                        lleno: !c.grabadora.grabando && !c.grabadora.procesando
                         peligro: c.grabadora.grabando
-                        texto: c.grabadora.grabando ? "Detener" : c.grabadora.eligiendoArea ? "Elige el área…" : "Grabar"
+                        texto: c.grabadora.grabando ? "Detener" : c.grabadora.procesando ? "Procesando…" : c.grabadora.eligiendoArea ? "Elige el área…" : "Grabar"
                         onClic: {
+                            if (c.grabadora.procesando) return
                             if (c.grabadora.grabando) c.grabadora.detener()
                             else c.s.grabar(c.modoGrab, c.audio)
                         }

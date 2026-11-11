@@ -155,7 +155,7 @@ PanelWindow {
                         ahora: w.ahora
                         enPopup: true
                         onCerrar: w.av.descartar(hueco.fila.clave)
-                        onAccion: id => w.av.invocar(hueco.fila.clave, id)
+                        onAccion: id => { if (id.startsWith("hola:")) w.av.activar(hueco.fila.clave, id); else w.av.invocar(hueco.fila.clave, id) }
                         onClicCuerpo: w.av.clicCuerpo(hueco.fila.clave)
 
                         // Barra fina de tiempo restante
